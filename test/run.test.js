@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_GROWTH, MAX_SURPLUS_PICKS } from '../src/sim/run.js'
+import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN } from '../src/sim/run.js'
 import {
   baseLoadout, resolveLoadout, drawOffers, partAvailable, countPart,
   PARTS, PART_BY_ID, BUCKET_SITES, SITE_ORDER, BUCKET_MOUTH_MAX
@@ -427,6 +427,67 @@ test('a run records into the meta, and unlocks are monotone', () => {
 })
 
 // ── the base values ─────────────────────────────────────────────────────────
+
+// ── the keystone's socket must not rot ──────────────────────────────────────
+//
+// `SCORE_ORIGIN` is a falsifiable claim about where a score came from, and
+// `run.provenance` is what will one day let an instrument check it
+// (docs/HANDOFF.md — where the score came from). A scoring source added later
+// without a classification would be invisible to that instrument, which is the
+// quiet way a measurement stops measuring everything — exactly the failure
+// Builder 2's cue-family test was written against.
+
+test('every scoring source declares an origin', () => {
+  for (const kind of Object.keys(SCORE)) {
+    assert.ok(SCORE_ORIGIN[kind],
+      `SCORE.${kind} has no entry in SCORE_ORIGIN — it would be counted as "aimed" by default`)
+    assert.ok(['aimed', 'lottery'].includes(SCORE_ORIGIN[kind]),
+      `SCORE_ORIGIN.${kind} is "${SCORE_ORIGIN[kind]}", which is not an origin`)
+  }
+  for (const kind of Object.keys(SCORE_ORIGIN)) {
+    assert.ok(SCORE[kind] !== undefined,
+      `SCORE_ORIGIN declares "${kind}", which is not a scoring source`)
+  }
+})
+
+test('the provenance ledger accounts for every point, exactly', () => {
+  const run = new Run(cab, 77)
+  run.quota = Infinity                     // never stop; we want a long tail
+  const kinds = Object.keys(SCORE)
+  for (let i = 0; i < 400; i++) {
+    const kind = kinds[i % kinds.length]
+    run.add(SCORE[kind], kind, 0.2, 0.3)
+    if (i % 17 === 0) run.observe([], run.loadout.comboWindow + 0.1, { inFlight: 1 })
+  }
+  const P = run.provenance
+  const bySource = Object.values(P.bySource).reduce((a, b) => a + b, 0)
+  assert.equal(bySource, run.score, 'the per-source split does not sum to the score')
+  assert.equal(P.byOrigin.aimed + P.byOrigin.lottery, run.score,
+    'the aimed/lottery split does not sum to the score')
+  assert.equal(P.base + P.fromChain, run.score,
+    'base + fromChain must equal the score exactly, not approximately')
+  assert.ok(P.fromChain > 0, 'no score was attributed to the chain across 400 events')
+  assert.ok(P.byOrigin.aimed > 0 && P.byOrigin.lottery > 0)
+})
+
+test('the provenance ledger is read by nothing', () => {
+  // The keystone contract: declared, wired, consumed by nothing. If a future
+  // builder wires a consumer, they should delete this test on purpose rather
+  // than discover it failing.
+  const a = new Run(cab, 78)
+  const b = new Run(cab, 78)
+  // Corrupt one ledger beyond all recognition, then play both identically.
+  b.provenance.byOrigin.lottery = 999999
+  b.provenance.bySource.nonsense = -12345
+  b.provenance.base = NaN
+  for (let i = 0; i < 30; i++) {
+    for (const r of [a, b]) r.add(SCORE.bucket, 'bucket', 0.1, 0.3)
+  }
+  assert.equal(a.score, b.score, 'the provenance ledger fed back into scoring')
+  assert.equal(a.status, b.status)
+  assert.equal(a.chain, b.chain)
+  assert.equal(a.ballsLeft, b.ballsLeft)
+})
 
 // ── the record ──────────────────────────────────────────────────────────────
 

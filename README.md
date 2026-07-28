@@ -205,7 +205,7 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 85 tests: physics, determinism, varnish law, value learning,
+npm test                        # 89 tests: physics, determinism, varnish law, value learning,
                                 #   the pull, the fire-rate contracts, the Shepard illusion,
                                 #   the two conditioning laws, and the run — including that a
                                 #   Run may expose no presentation surface and a Machine may
@@ -238,19 +238,27 @@ before it became clear the problem wanted a rule instead of a fix.
 ## For the next builder
 
 **[docs/HANDOFF.md](docs/HANDOFF.md)** — where things stand, what is deliberately unfinished, and
-the two keystones. Both are pre-wired and neither is built, on purpose:
+the **three keystones**. All three are pre-wired, none is built, on purpose:
 
 - **Nail bending.** Every nail carries a displacement already summed into collision, broadphase
   and render, and never set to anything but zero. Bend one, and the board's economy moves.
 - **The conditioning ledger.** Every sound declares a cue family and stamps itself when it
   sounds; nothing reads the log yet. Wire a consumer and the machine's own conditioning becomes
   measurable — then it can hand you a receipt for it.
-- **The run's own seed.** A Run is fully reproducible from one integer — the offers, the floors,
-  all of it — and nothing surfaces that integer or lets you type one in. Daily runs and shared
-  seeds are one text field away.
+- **The provenance ledger.** Every point scored is classified by where it came from — a pocket you
+  *aimed at*, or a *lottery* you never touched — and separately by how much of it the chain paid
+  for. Nothing reads it either.
+
+Plus one loose end that is not a keystone, just an easy win: **a Run is fully reproducible from
+one integer** — the offers, the floors, all of it — and nothing surfaces that integer or lets you
+type one in. Daily runs and shared seeds are one text field away.
 
 The game proves it is honest about your money. It does not yet prove it is honest about what it
-taught you. That is the whole of the second keystone.
+*taught* you, or about how much of your score you can take *credit* for. That is the whole of the
+second and third keystones — and the pilot measurement is already surprising: on a built board,
+**four fifths of a score comes from the chain multiplier**, not from any pocket at all. A machine
+that pays overwhelmingly for tempo and attention is a strange thing for this project to have
+built by accident.
 
 **[docs/PLAN-THE-HONEST-MACHINE-2026-07-27.md](docs/PLAN-THE-HONEST-MACHINE-2026-07-27.md)** — the
 founding plan and the six design laws. Law 4 (varnish is presentation only) is enforced by test;

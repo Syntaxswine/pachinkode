@@ -108,6 +108,102 @@ export function chainMult (chain, L) {
   return 1 + Math.min(L.comboCap, chain) * L.comboStep
 }
 
+// ── THE KEYSTONE: WHERE THE SCORE CAME FROM ─────────────────────────────────
+//
+// Declared here, accumulated in `add()`, and read by NOTHING. That is the same
+// contract Builder 1 used for nail bending and Builder 2 for the conditioning
+// ledger, and it is deliberate: see docs/HANDOFF.md.
+//
+// ── the claim ───────────────────────────────────────────────────────────────
+//
+// This project's whole argument is that the lottery is the con — that the start
+// pocket does not pay you, it sells you a ticket, and the machine throws a
+// party for a net loss of thirty balls. Every document here says so. The game
+// has never been able to PROVE it about a particular session, because until the
+// roguelike there was no single number a session could be summarised by.
+//
+// Now there is one, and a score has something a ledger never had: PROVENANCE.
+// Every point entered through a named pocket, and the pockets divide cleanly:
+//
+//   aimed    a place on the board a dial setting can be pointed at. A bucket,
+//            a tulip, a warp, the start pocket itself. You did this.
+//   lottery  a payout that exists because an RNG you never touched said so —
+//            the jackpot, the small win, and the attacker entries they open.
+//            You were present for this.
+//
+// The split is a FALSIFIABLE CLAIM about the design, in the same way CUE_FAMILY
+// is a falsifiable claim about the sounds. If a future builder adds a scoring
+// source and does not classify it, a test fails.
+//
+// ── and the third axis ──────────────────────────────────────────────────────
+//
+// The chain multiplier is neither. It is tempo — the reward for keeping the
+// board alive, which is the one thing in this game that is purely a function of
+// how the player is playing rather than where the ball went. So `fromChain`
+// tracks it separately: of the points you scored, how many existed only because
+// you were holding a chain together.
+//
+// base + fromChain === score, exactly, and a test pins that.
+//
+// ── what it is FOR ──────────────────────────────────────────────────────────
+//
+// Nothing reads it yet. The unbuilt consumer is the end-of-run screen, and it
+// would say something no gambling machine has ever said to anybody:
+//
+//     4,182,300 points.
+//     91% of it came from pockets you aimed at.
+//     9% came from a lottery you did not touch, and could not have.
+//     A third of your total existed only because you kept a chain alive.
+//
+// That is the varnish argument finally closing on the player's own session
+// rather than on a slider — and it is the natural partner to Builder 2's
+// conditioning ledger, which measures what the machine TAUGHT you while this
+// measures what it PAID you for. Between them the last screen of this game
+// could be an honest receipt for an evening, itemised two ways.
+//
+// ── a pilot measurement, because guessing was cheaper to check than to hedge ─
+//
+// One 400-ball floor on two cabinets, as soon as the ledger was wired:
+//
+//                 score    lottery   fromChain   sources
+//   floor         3,402       0.0%       50.4%   bucket 46, heso 22, warp 18, tulip 14
+//   uramono     274,597       2.3%       78.6%   bucket 76, warp 11, heso 10, …
+//
+// Two things fall out immediately, and only one was expected.
+//
+// EXPECTED: the lottery share is higher on URAMONO than on the stock machine.
+// The game's most desirable cabinet does hand more credit to an RNG you never
+// touched — the exhibit makes its own argument, quietly, without anybody having
+// written a word of it.
+//
+// NOT EXPECTED, AND MUCH LARGER: **most of the score is the chain.** Half of it
+// on the stock board, four fifths on a built one. The single biggest source of
+// points in this game is not any pocket — it is the player keeping the board
+// alive, which is the one quantity here that is purely a function of how they
+// are playing rather than where a ball happened to fall. A gambling machine
+// that pays overwhelmingly for tempo and attention is a strange object, and I
+// did not design it to be one; it fell out of a multiplier compounding against
+// six mouths.
+//
+// So the open question is no longer "is the lottery share small". It is: over
+// a FULL RUN, where jackpots have time to arrive and the chain has time to hit
+// its cap, do those two lines cross? That is what the unbuilt consumer would
+// answer, and it is a better question than the one I started with.
+export const SCORE_ORIGIN = {
+  bucket: 'aimed',
+  heso: 'aimed',
+  tulip: 'aimed',
+  warp: 'aimed',
+  attacker: 'lottery',
+  koatari: 'lottery',
+  jackpot: 'lottery'
+}
+
+/** A fresh provenance ledger. */
+export function newProvenance () {
+  return { bySource: {}, byOrigin: { aimed: 0, lottery: 0 }, base: 0, fromChain: 0 }
+}
+
 // ── the floors ──────────────────────────────────────────────────────────────
 //
 // QUOTA_BASE and QUOTA_GROWTH are the wall. BALLS_BASE is the clock.
@@ -203,6 +299,9 @@ export class Run {
     this.launchedAtQuota = 0
     this.inFlight = 0
     this.refundPool = 0
+    // The keystone's ledger. Accumulated for the whole run, never reset per
+    // floor, and read by nothing. See SCORE_ORIGIN above.
+    this.provenance = newProvenance()
     this.events = []
   }
 
@@ -233,6 +332,18 @@ export class Run {
     this.score += n
     this.floorScore += n
     this.totalEvents++
+
+    // ── the keystone's ledger ──
+    // `flat` is what this event would have scored with no chain running, so
+    // `n - flat` is exactly the part of it that the chain paid for. Rounding
+    // both from the same quantity is what makes base + fromChain === score
+    // hold exactly rather than approximately, which a test pins.
+    const P = this.provenance
+    const flat = Math.round(base * kindMult * L.scoreMult)
+    P.bySource[kind] = (P.bySource[kind] || 0) + n
+    P.byOrigin[SCORE_ORIGIN[kind] || 'aimed'] += n
+    P.base += flat
+    P.fromChain += n - flat
     this.emit('score', { n, kind, site, x, y, chain: this.chain, mult: this.mult, total: this.floorScore })
     // Meeting the quota does not end the floor. It opens a decision — see
     // meetQuota() — and only the first time, because the score keeps climbing

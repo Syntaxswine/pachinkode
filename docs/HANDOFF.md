@@ -648,10 +648,26 @@ harness that verifies the game is part of the game's attack surface.
   and it is exactly the sort of thing the unbuilt conditioning ledger exists to settle.
 - **The auto-player does not aim.** Every difficulty number here is therefore a FLOOR on what a
   human can do, which is the right direction to be wrong in but makes the curve conservative.
-- Builder 1's nail-bending keystone is still unbuilt — though the loadout layer now bends the life
+- **The chain dominates the score and nothing says so.** The provenance pilot (see the keystone
+  below) measured 50–79% of all points coming from the chain multiplier rather than from any
+  pocket. That is the biggest single fact about how this game scores and it is invisible to the
+  player, who sees a `×20.8` in the corner and no indication that it is most of their total.
+- **`--sites` should be re-run after any change to the routes or the furniture.** The bucket
+  values are inverse-weighted to measured arrival rates, so moving a tulip silently mis-prices
+  six pockets.
+
+### The keystone ledger
+
+- Builder 1's **nail bending** is still unbuilt — though the loadout layer now bends the life
   nails at BUILD time, which is a different thing and does not consume it.
-- Builder 2's conditioning ledger is still unbuilt, and `tools/cue-contingency.mjs` still does not
-  exist.
+- Builder 2's **conditioning ledger** is still unbuilt, and `tools/cue-contingency.mjs` still does
+  not exist.
+- Builder 3's **provenance ledger** is wired below and read by nothing.
+
+Three sockets, no consumers. That is either a discipline or an excuse, and the next builder gets
+to decide which — my honest read is that the two receipts (what it paid you for, what it taught
+you) are now close enough together that building them as one screen is a smaller job than any of
+the three sockets was.
 
 ## An observation from the operator, recorded because it is a real finding
 
@@ -664,6 +680,85 @@ itself sets, so the ear hears one instrument with a periodic body and a stochast
 exactly a pellet drum's signature. It is the same kind of fact as the route split: nobody designed
 it, it fell out of the parts. It is noted in `src/audio/synth.js` because a future builder
 retuning the impact budget or the launch envelope will change it without meaning to.
+
+## THE THIRD KEYSTONE — where the score came from
+
+*Declared, wired, consumed by nothing. Same contract as Builder 1's nail bending and Builder 2's
+conditioning ledger, and for the same reason: the socket is the hard part and the consumer is the
+fun part, so the socket is what a handoff should contain.*
+
+### Why this one
+
+This project has always argued that **the lottery is the con**. The start pocket does not pay you,
+it sells you a ticket; the machine throws a party for a net loss of thirty balls; the odds are
+printed because a real machine would not print them. Every document here says it. The game has
+never been able to prove it *about a particular session*, because until the roguelike there was no
+single number a session could be summarised by.
+
+Now there is one — and a score has something the token ledger never had: **provenance.** Every
+point entered through a named pocket, and the pockets divide cleanly.
+
+### The socket
+
+- **`SCORE_ORIGIN`** (`src/sim/run.js`) classifies every scoring source as one of two things:
+
+  | | |
+  |---|---|
+  | `aimed` | a place a dial setting can be pointed at — a bucket, a tulip, a warp, the start pocket. *You did this.* |
+  | `lottery` | a payout that exists because an RNG you never touched said so — the jackpot, the small win, and the attacker entries they open. *You were present for this.* |
+
+  It is a falsifiable claim about the design, exactly as `CUE_FAMILY` is one about the sounds, and
+  a test fails if a future builder adds a scoring source without classifying it.
+
+- **`run.provenance`** accumulates it three ways for the whole run: `bySource` (which pocket),
+  `byOrigin` (aimed vs lottery), and `base` / `fromChain`.
+
+- **The third axis is the one that turned out to matter.** The chain multiplier is neither aimed
+  nor lottery — it is *tempo*, the reward for keeping the board alive, the one quantity in this
+  game that is purely a function of how the player is playing rather than where a ball fell. So
+  `fromChain` tracks it separately. `base + fromChain === score`, **exactly**, and a test pins
+  that rather than settling for approximately.
+
+Three tests guard it: every source declares an origin, the three splits each sum to the score
+exactly, and corrupting the ledger changes nothing anybody plays with.
+
+### What the pilot already found
+
+One 400-ball floor on two cabinets, run the moment the ledger was wired:
+
+| cabinet | score | lottery share | from the chain |
+|---|---|---|---|
+| THE FLOOR MACHINE | 3,402 | **0.0%** | **50.4%** |
+| URAMONO | 274,597 | **2.3%** | **78.6%** |
+
+**Expected:** the lottery share is higher on URAMONO. The game's most desirable cabinet — the
+rigged back-room machine the whole unlock ladder walks toward — does hand more credit to an RNG
+you never touched. The exhibit makes its own argument, quietly, without anybody having written a
+word of it.
+
+**Not expected, and much larger: most of the score is the chain.** Half of it on a stock board,
+four fifths on a built one. The single biggest source of points in this game is not any pocket —
+it is the player keeping the board alive. A gambling machine that pays overwhelmingly for tempo
+and attention is a strange object, and I did not design it to be one. It fell out of a multiplier
+compounding against six mouths.
+
+So the question I started with ("is the lottery share small?") is not the interesting one. The
+interesting one is: **over a full run — where jackpots have time to arrive and the chain has time
+to hit its cap — do those two lines cross?** That is what the unbuilt consumer answers, and it is
+a better question than mine.
+
+### The unbuilt consumer
+
+The end-of-run screen. Not a debug view — a receipt:
+
+> **4,182,300 points.**
+> 91% of it came from pockets you aimed at.
+> 9% came from a lottery you did not touch, and could not have.
+> A third of your total existed only because you kept a chain alive.
+
+Paired with Builder 2's conditioning ledger — which measures what the machine **taught** you while
+this measures what it **paid** you for — the last screen of this game could be an honest receipt
+for an evening, itemised two ways. No machine that takes money has ever offered one.
 
 ## Maker's mark
 
@@ -681,13 +776,31 @@ centripetal condition Builder 1 discovered by accident and never designed. The b
 emergent fact reached forward and deleted a feature. That is a project whose bedrock is
 load-bearing.
 
-**The forward dream.** The roguelike is the hook; the exhibit is still the point. What I would
-love to see is the two finally colliding: a run that ends by telling you how much of your score
-came from the honest prizes and how much from the lottery, in the same breath as Builder 2's
-receipt for what the sounds taught you. The parts you chose are a record of what you thought was
-valuable. The machine already knows whether you were right.
+The second thing I care about is the **negative dt**, because of how it was found. The board was
+reporting a 75% foul rate against an instrument that said 1–4%, and the project has a documented,
+operator-ruled channel jam that produces exactly that symptom. The explanation arrived before the
+suspicion did, and I very nearly filed it as *the jam is worse in play than the instrument says* —
+which would have been a lie in the documentation, discovered by a player, about a defect that
+corrupted the physics after any tab restore. What caught it was not thinking harder about the
+jam. It was noticing that `sinceLaunch` held a value with **no legal way to exist**. A plausible
+story loses to an impossible number, every time, and that is worth more than the fix.
 
-And keep the switch. It survived a scoring layer, which is the hardest thing that has ever been
-asked of it.
+**The forward dream.** The roguelike is the hook; the exhibit is still the point, and the three
+keystones now line up to close it.
+
+Builder 1 wanted the nails to become a character. Builder 2 wanted the sounds to become evidence.
+I want the **score to become an argument** — and the socket for that is in, so the dream is no
+longer the far end of a wish. Build the receipt. Then build Builder 2's, next to it. Then the last
+screen of this game says two things nothing that takes money has ever said to anybody: *here is
+what you actually earned, and here is what we taught you while you earned it.*
+
+And then flip the switch and play it again, same seed, same odds, same physics — and watch both
+receipts come out identical while the evening does not.
+
+That is the whole project. It has been the whole project since the first commit. Every builder so
+far has left one more socket for it, and none of us has built the ending, which I suspect is
+because the ending is the easy part once the honesty is load-bearing.
+
+Keep the switch.
 
 — *Builder 3 · Claude Opus 5 · 2026-07-28*
