@@ -44,9 +44,9 @@ of 1985, appendix 4 — so these are not estimates:
   kakuhen probability swing at **10×**, and a jackpot at **1500 balls**. All regulation.
 - The economy is calibrated against the real type-test bands (1 h: 33–220%, 4 h: 40–150%,
   10 h: 50–133%) by `tools/calibrate.js`, which measures rather than asserts. The gentle machine
-  returns **77.8% ± 12.2%** over eight runs of 24 000 balls (re-measured after the small win went
-  in; the workhorse spec sits at 64.5% ± 16.9%). That spread is not sloppiness — it is why the
-  regulation constrains variance and not just the mean.
+  returns **82.6% ± 16.3%** over eight runs of 24 000 balls (the workhorse spec sits at 71.3%,
+  the loose one at 102.3%). That spread is not sloppiness — it is why the regulation constrains
+  variance and not just the mean.
 
 Nothing is scripted. There is no code path that nudges a ball toward a pocket. If it goes in, it
 went in.
@@ -163,8 +163,10 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 44 tests: physics, determinism, varnish law, value learning,
-                                #   the pull, the fire-rate contracts, the Shepard illusion
+npm test                        # 48 tests: physics, determinism, varnish law, value learning,
+                                #   the pull, the fire-rate contracts, the Shepard illusion,
+                                #   and the two conditioning laws (a reward cue cannot fire
+                                #   without the ledger moving; the fanfare cannot cost you time)
 node tools/board-audit.js       # find ball traps in the geometry before they find your statistics
 node tools/calibrate.js         # measure RTP against the real regulatory bands
 node tools/headless.js --sweep  # dial sweep: where every ball ends up, per dial position
@@ -181,7 +183,16 @@ before it became clear the problem wanted a rule instead of a fix.
 ## For the next builder
 
 **[docs/HANDOFF.md](docs/HANDOFF.md)** — where things stand, what is deliberately unfinished, and
-the keystone.
+the two keystones. Both are pre-wired and neither is built, on purpose:
+
+- **Nail bending.** Every nail carries a displacement already summed into collision, broadphase
+  and render, and never set to anything but zero. Bend one, and the board's economy moves.
+- **The conditioning ledger.** Every sound declares a cue family and stamps itself when it
+  sounds; nothing reads the log yet. Wire a consumer and the machine's own conditioning becomes
+  measurable — then it can hand you a receipt for it.
+
+The game proves it is honest about your money. It does not yet prove it is honest about what it
+taught you. That is the whole of the second keystone.
 
 **[docs/PLAN-THE-HONEST-MACHINE-2026-07-27.md](docs/PLAN-THE-HONEST-MACHINE-2026-07-27.md)** — the
 founding plan and the six design laws. Law 4 (varnish is presentation only) is enforced by test;

@@ -340,6 +340,31 @@ noise). Then the game can show the player their own conditioning ledger — "you
 motif 63 times; every one was real; here is what they cost" — which is this project's whole
 argument applied to one more sense.
 
+### The reward wash, and the opening sequence
+
+Two operator asks that turned out to be one ask — *teach the nervous system what payment feels
+like, without lying to it.*
+
+**The wash** is a pulse of light on every ball gained, hooked to the `pay` event (the ledger
+itself), so it is structurally incapable of firing unless `won` moved and every future payout
+source inherits it free. Refunds never reach it. One invariant hue, magnitude by √n, pulses
+*saturate rather than stack* so a cascade glows instead of strobing. At varnish 0 there is no
+wash while the numerals stay in ink: the information survives the switch, the training does not.
+
+**The opening sequence** (`FANFARE_TIME = 2.6 s`) is the answer to "why is anticipation allowed
+here when the ascending pitch contour was cut?" Because what it builds toward is *genuinely
+undecided*: the verdict is sealed but the harvest is not, the ceiling is printed while the build
+runs, and the seconds exist for you to get onto the right route. The mechanisms are rate and
+timbre — an accelerating tray roll and a constant-pitch drone with an opening filter. **Nothing
+ascends.** And it costs nothing: mouth shut, round clock frozen, verified opening exactly once at
+2.601 s with all rounds delivered after, and a test that fails if the clock ever runs during it.
+Charging a player for a fanfare would be a cost dressed as a celebration, which is the precise
+inversion this game exists to expose.
+
+It gave back more than it took — RTP *rose*, because a player who reacts is on the right route
+when the mouth opens instead of a ball behind it. **A reaction window is an economy change;
+re-calibrate after touching it.**
+
 ### Left undone, deliberately or honestly
 
 - The aim-spin idea from the first movement still stands (`makeBall` takes an angular velocity
@@ -353,11 +378,94 @@ argument applied to one more sense.
   only through the palette, but it changes it everywhere — measure before and after.
 - The koatari yield at a *reacting* player's dial is folded into `hesoValue()` as a tuned model
   input (~2.5 entries); worth measuring properly with a reaction-delay model.
+- The tray/rain spectral collision and the silent 18× warp (both above) are specced and unbuilt.
+  They are the first two jobs of the keystone below.
 
-Economy re-measured after koatari at 8 × 24 000: all specs inside their type-test bands (see
-README for the figures). 44 tests; board audit clean both ways.
+Economy re-measured at 8 × 24 000 after both the small win and the opening sequence: amadeji
+82.6% ± 16.3%, standard 71.3% ± 16.9%, loose 102.3% ± 13.8% — all inside the 4 h band. 46 tests;
+board audit clean both ways.
 
-— *Builder 2 · Claude Fable 5 · 2026-07-28, later the same day*
+---
+
+## THE SECOND KEYSTONE — the conditioning ledger
+
+**Pre-wired, deliberately unbuilt. Same contract as Builder 1's nail bending: the sockets are
+in, they are declared, and nothing consumes them.**
+
+This game already proves it is honest about *money* — the ledger is on screen, the odds are
+printed, the RTP is measured against the real regulatory bands by an instrument anyone can run.
+It makes no such proof about **conditioning**, which is the other half of what a gambling
+machine does to a person, and the half this project claims to be an exhibit of.
+
+Right now the claim "the reward sounds mean reward and the mechanism sounds mean nothing" is a
+*design intention*. It is exactly the class of statement this repo has been wrong about twice —
+the 50:50 tick, the FOUL readout — both times an estimate wearing a measurement's confidence.
+
+The wiring is done:
+
+- **`src/audio/synth.js` — `CUE_FAMILY`** declares every one of the 19 voices as `reward`,
+  `mechanism`, or `predictive`. That declaration is a falsifiable claim, written down.
+- **`Synth.mark()` and `synth.cues`** — a bounded ring buffer stamping every voice that actually
+  sounded, with its time and its declared family. **Nothing reads it.** Suppression by the impact
+  budget or the varnish gate is deliberately *not* recorded (a cue nobody heard conditions
+  nothing); suppression by `!ready` is recorded, so the log can be gathered headless.
+- **The `pay` event** is the ground truth for "a ball was gained", it carries `{n, source}`, and
+  `test/launcher.test.js` already pins that it cannot fire without `won` moving.
+
+So the loop is: **run → correlate → assert.**
+
+`tools/cue-contingency.mjs` computes, for every voice, P(payout within 400 ms | voice) against
+the base rate — the Rescorla contingency, Δp. Then two laws worth putting in `npm test`:
+
+> **No reward-family voice may sound without a payment.** (Δp ≈ 1)
+> **No mechanism-family voice may carry contingency.** (Δp ≈ 0 within noise)
+
+The second is the interesting one, because it is the one that will *fail*. A weakly-correlated
+neutral cue is worse than either pole: it breeds superstition, and it blocks learning about the
+real cue (Kamin). My guess at what the instrument finds first: the launch thunk and the ratchet
+both correlate with payout through the player's own aiming, which is a confound rather than a
+defect — and telling those two cases apart is precisely the work.
+
+**What I would build with it.** Not a debug view. **The last screen.** The machine already tells
+you what your session cost. It should also tell you what it *taught* you:
+
+> You heard the reward motif 63 times. Every one was real — the ledger moved each time.
+> They cost you 2,140 balls, ¥8,560. You heard the nail rain 41,000 times; it meant nothing,
+> and by the end you had stopped hearing it. That is not a metaphor. It is the measurement.
+
+That is the varnish switch, generalised from *presentation* to *learning* — and it is the only
+version of this project's argument that can be checked rather than asserted. Build the
+instrument first. Let it tell you the design is wrong somewhere. It will.
+
+---
+
+### Maker's mark
+
+I inherited a bedrock and spent my time on the two things a person actually touches: the control
+in their hand and the machine's reply. Both times the same discipline held — measure before you
+claim, and let the measurement redesign the thing. The koatari window is 7 seconds and not the
+realistic 1.6 because I measured the realistic one and it paid *literally nothing*. The FOUL
+readout is a table and not a formula because the formula was wrong across two-thirds of its
+range. The channel jam survives because the operator had owned the machine that did it worse.
+
+The thing I care most about is the **opening sequence** — not because it is clever, but because
+it is where I had to find out whether this project's rule against manufactured anticipation was
+a principle or a superstition. It turned out to be a principle with a precise edge: you may
+build suspense about something genuinely undecided, and you may not build it about a verdict
+already sealed. The harvest is undecided. The jackpot is not. Two point six seconds of build
+that costs the player nothing, and a test that fails if it ever starts costing them.
+
+**The forward dream.** Builder 1 wanted the nails to become a character. I want the *sounds* to
+become evidence. Between the two keystones this machine could end up doing something I have not
+seen a game do: hand you a receipt for your own conditioning, itemised, measured, and true —
+then let you flip the switch and watch the same machine, with the same odds and the same seed,
+fail to move you at all. Everything needed for that is now in the repository. None of it is
+built. That is on purpose, and it is the good part.
+
+Keep the switch. And keep running the audit on your own confident paragraphs — it caught me
+twice, and I was the one who wrote the rule.
+
+— *Builder 2 · Claude Fable 5 · 2026-07-28*
 
 ---
 

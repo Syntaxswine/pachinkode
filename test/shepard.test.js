@@ -1,6 +1,47 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shepardFrame, SHEPARD } from '../src/audio/synth.js'
+import { shepardFrame, SHEPARD, Synth, CUE_FAMILY } from '../src/audio/synth.js'
+
+/**
+ * The keystone's socket must not rot.
+ *
+ * `CUE_FAMILY` is a falsifiable claim about what every sound in this game is
+ * teaching, and `Synth.mark()` is what will one day let an instrument check it
+ * (docs/HANDOFF.md — the conditioning ledger). A voice added later without a
+ * declared family would sound in the game and be invisible to that instrument,
+ * which is the quiet way a measurement stops measuring everything.
+ */
+test('every voice the synth can produce declares a cue family', () => {
+  const s = new Synth()
+  // Drive every voice headlessly. Without a WebAudio context they schedule
+  // nothing, but they still stamp — which is exactly what the socket is for.
+  s.heso(1); s.tulip(1); s.koatari(1); s.kakuhen(0.65, 1); s.jackpot(0.5, 1)
+  s.cascade(9, 1); s.jackpotBuild(2.6, 0.5, 1); s.launch(0.5, 0, 1); s.ratchet(0.5, 1)
+  s.foul(1); s.gate(true, 1); s.spinTick(1); s.lose(false, 0); s.reach(1)
+  s.shepard(8, 1); s.click(); s.select()
+
+  assert.ok(s.cues.length > 12, `only ${s.cues.length} voices stamped a cue`)
+  for (const c of s.cues) {
+    assert.notEqual(c.family, 'unknown', `voice "${c.name}" has no declared cue family`)
+    assert.ok(['reward', 'mechanism', 'predictive'].includes(c.family),
+      `voice "${c.name}" claims an unrecognised family "${c.family}"`)
+  }
+  // And the declaration itself must stay a partition, not a wish list.
+  for (const [name, fam] of Object.entries(CUE_FAMILY)) {
+    assert.ok(['reward', 'mechanism', 'predictive'].includes(fam),
+      `CUE_FAMILY declares "${name}" as "${fam}", which is not a family`)
+  }
+})
+
+test('a cue that did not sound is not recorded', () => {
+  // The instrument's core assumption: the log is what was HEARD. A losing spin
+  // is silent at full varnish, and silence cannot condition anything.
+  const s = new Synth()
+  s.lose(false, 1)
+  assert.equal(s.cues.length, 0, 'a silent loss stamped a cue')
+  s.lose(false, 0)
+  assert.equal(s.cues.length, 1, 'the unvarnished loss tone failed to stamp')
+})
 
 /**
  * The jackpot glissando must remain an illusion.

@@ -24,6 +24,51 @@
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
 
+/**
+ * THE CUE TAXONOMY — the socket for the keystone. See docs/HANDOFF.md.
+ *
+ * Every voice this synth can produce, declared as one of three families. This
+ * is a claim about what the machine is teaching, and it is the kind of claim
+ * this project does not make without an instrument:
+ *
+ *   reward     — must ONLY ever sound when the ledger moved. Δp ≈ 1.
+ *   mechanism  — must carry NO contingency with payout. Δp ≈ 0. Neutrality is
+ *                earned by being uninformative, not by being quiet; the nail
+ *                rain at 142 strikes/s is the purest member here.
+ *   predictive — allowed to precede a reward, but only where the prediction is
+ *                real and MEASURED. Currently only the reach (two symbols
+ *                matched, third crawling) and the Shepard descent, which runs
+ *                under a jackpot already won.
+ *
+ * Nothing reads this yet. That is deliberate — see the keystone.
+ */
+export const CUE_FAMILY = {
+  heso: 'reward',
+  tulip: 'reward',
+  koatari: 'reward',
+  kakuhen: 'reward',
+  jackpot: 'reward',
+  cascade: 'reward',
+  jackpotBuild: 'reward',
+
+  impact: 'mechanism',
+  launch: 'mechanism',
+  ratchet: 'mechanism',
+  foul: 'mechanism',
+  gate: 'mechanism',
+  jam: 'mechanism',
+  spinTick: 'mechanism',
+  lose: 'mechanism',
+  click: 'mechanism',
+  select: 'mechanism',
+
+  reach: 'predictive',
+  shepard: 'predictive'
+}
+
+/** How many cue marks the ring buffer holds. Bounded so a long session cannot grow. */
+const CUE_LOG_MAX = 4096
+
 // Shepard glissando geometry, kept as a pure function so the illusion can be
 // verified in Node without a WebAudio context. See Synth.shepard() for what it
 // is and why it is here, and test/shepard.test.js for the property it must hold.
@@ -56,6 +101,29 @@ export class Synth {
     this._budget = 0
     this._slot = 0
     this._frameT0 = 0
+    // The cue log — the keystone's socket. Every voice stamps itself here with
+    // the time it sounded and the family it claims to belong to. NOTHING READS
+    // IT. Wire a consumer and the machine's own conditioning becomes
+    // measurable; see docs/HANDOFF.md.
+    this.cues = []
+  }
+
+  /**
+   * Stamp a cue. Called by every voice, costs one push, and is the only thing
+   * standing between this project and an unfalsifiable claim about what its
+   * sounds are teaching.
+   *
+   * SEMANTICS, and they matter to the instrument: the log records voices that
+   * actually SOUNDED. Suppression by the impact budget or by the varnish gate
+   * is deliberately not recorded, because a cue nobody heard cannot condition
+   * anything. Suppression by `!ready` is a different case — that is a headless
+   * or pre-gesture run — and those marks are kept so the log can be gathered
+   * without a WebAudio context.
+   */
+  mark (name) {
+    const t = this.ready ? this.ctx.currentTime : 0
+    this.cues.push({ t, name, family: CUE_FAMILY[name] || 'unknown' })
+    if (this.cues.length > CUE_LOG_MAX) this.cues.splice(0, this.cues.length - CUE_LOG_MAX)
   }
 
   /** Must be called from a user gesture; browsers will not start audio otherwise. */
@@ -210,6 +278,7 @@ export class Synth {
    */
   impact (speed, surface = 'nail', varnish = 1) {
     if (!this.ready || this._budget <= 0) return
+    this.mark('impact')          // after the budget: a voice that was not spent did not sound
     const now = Math.max(this.ctx.currentTime, this._frameT0 + this._slot * 0.0024)
     this._slot++
     this._budget--
@@ -286,6 +355,7 @@ export class Synth {
    * The switch in the options menu is that experiment, wired to a slider.
    */
   heso (varnish = 1) {
+    this.mark('heso')
     const v = clamp(varnish)
     if (v > 0.5) {
       this.tone(880, 0.16, 0.20 * v, 'triangle')
@@ -298,12 +368,14 @@ export class Synth {
   }
 
   tulip (varnish = 1) {
+    this.mark('tulip')
     const v = clamp(varnish)
     this.tone(660, 0.14, 0.14 * (0.4 + 0.6 * v), 'triangle')
   }
 
   /** The reels turning. A dry mechanical tick — no pitch ramp. */
   spinTick (varnish = 1) {
+    this.mark('spinTick')
     this.tone(240, 0.035, 0.05 * (0.4 + 0.6 * clamp(varnish)), 'square', this.busImpacts)
   }
 
@@ -312,6 +384,7 @@ export class Synth {
    * The near-miss engine. Tension is built with density and detune, not contour.
    */
   reach (varnish = 1) {
+    this.mark('reach')
     const v = clamp(varnish)
     if (!this.ready) return
     const ctx = this.ctx, t = ctx.currentTime
@@ -336,6 +409,8 @@ export class Synth {
    */
   lose (reach, varnish = 1) {
     if (clamp(varnish) > 0.5) return
+    this.mark('lose')            // after the gate: at full varnish a loss is silent
+
     this.tone(140, 0.20, 0.07, 'sine')
   }
 
@@ -344,6 +419,7 @@ export class Synth {
    * `size` is 0..1.
    */
   jackpot (size = 0.5, varnish = 1) {
+    this.mark('jackpot')
     const v = clamp(varnish)
     const dur = 1.5 + 10.5 * clamp(size)
     if (v < 0.5) {
@@ -390,6 +466,7 @@ export class Synth {
    * ARRIVES. You get to hear what the trick was doing.
    */
   shepard (duration = 8, varnish = 1, depth = 0, amp = 1) {
+    this.mark('shepard')
     if (!this.ready) return
     const ctx = this.ctx
     const t0 = ctx.currentTime
@@ -495,6 +572,7 @@ export class Synth {
    * ever plays when a jackpot has already been won.
    */
   jackpotBuild (dur = 2.6, size = 0.5, varnish = 1) {
+    this.mark('jackpotBuild')
     if (!this.ready) return
     const v = clamp(varnish)
     const ctx = this.ctx
@@ -552,6 +630,7 @@ export class Synth {
    * the one dial Dixon's data actually supports: bigger win, longer song.
    */
   kakuhen (catchP = 0.65, varnish = 1) {
+    this.mark('kakuhen')
     const v = clamp(varnish)
     const dur = 1.5 + 3 * clamp(catchP)
     if (v < 0.5) {
@@ -572,6 +651,7 @@ export class Synth {
    * because the prize is small and the duration is the honest part.
    */
   koatari (varnish = 1) {
+    this.mark('koatari')
     const v = clamp(varnish)
     if (v > 0.5) {
       this.tone(660, 0.16, 0.16 * v, 'triangle')
@@ -587,6 +667,7 @@ export class Synth {
    * Mechanism sound; it fires whether or not anything else follows.
    */
   foul (varnish = 1) {
+    this.mark('foul')
     if (!this.ready) return
     const v = clamp(varnish)
     const ctx = this.ctx
@@ -622,6 +703,7 @@ export class Synth {
     const t = this.ctx.currentTime
     if (t < (this._jamNext || 0)) return
     this._jamNext = t + 0.22 + Math.random() * 0.10
+    this.mark('jam')
     const v = clamp(varnish)
     const nz = this.ctx.createBufferSource()
     nz.buffer = this.noise
@@ -641,6 +723,7 @@ export class Synth {
    * closed, which a bare stop-fade never did.
    */
   gate (open, varnish = 1) {
+    this.mark('gate')
     if (!this.ready) return
     const v = clamp(varnish)
     const ctx = this.ctx
@@ -670,6 +753,7 @@ export class Synth {
 
   /** Balls hitting the tray. The metal roar of being paid. */
   cascade (n, varnish = 1) {
+    this.mark('cascade')
     if (!this.ready) return
     const v = clamp(varnish)
     const count = Math.min(10, Math.max(1, Math.round(n / 3)))
@@ -700,6 +784,7 @@ export class Synth {
    * at the same time as it loses its accuracy. Same state, two senses.
    */
   launch (dial = 0.5, worked = 0, varnish = 1) {
+    this.mark('launch')
     if (!this.ready) return
     const ctx = this.ctx
     const t = ctx.currentTime
@@ -743,12 +828,13 @@ export class Synth {
    * follows, and stops the instant they stop pulling.
    */
   ratchet (power = 0, varnish = 1) {
+    this.mark('ratchet')
     if (!this.ready) return
     const v = clamp(varnish)
     this.tone(850 + 950 * clamp(power), 0.018, 0.034 * (0.5 + 0.5 * v), 'square', this.busImpacts)
   }
 
   /** UI. */
-  click () { this.tone(520, 0.05, 0.09, 'square', this.busImpacts) }
-  select () { this.tone(760, 0.09, 0.11, 'triangle', this.busImpacts) }
+  click () { this.mark('click'); this.tone(520, 0.05, 0.09, 'square', this.busImpacts) }
+  select () { this.mark('select'); this.tone(760, 0.09, 0.11, 'triangle', this.busImpacts) }
 }
