@@ -145,6 +145,20 @@ const ATTACKER_SHUT_DELAY = 1.1         // s of grace after the last entry
 const KOATARI_TIME = 7                  // s the attacker opens on a small win
 const KOATARI_ENTRIES = 4               // entry cap for that opening
 
+// The opening sequence. The attacker stays SHUT while it runs and the round
+// clock does not start, so it costs the player nothing — it is the window in
+// which they crank the dial right, the same reaction beat koatari teaches.
+//
+// What it builds anticipation FOR is genuinely undecided, which is the only
+// reason it is allowed to exist in this project. The verdict is already fixed
+// (it was fixed the instant the ball entered the pocket, and the reels are a
+// readout) — but the HARVEST is not. How much of the ceiling below you take
+// depends on what you do in the next three minutes. That is real suspense
+// about a real unknown, and it is the opposite of the ascending-anticipation
+// folklore this repo cut: nothing here pretends to influence an outcome that
+// is already sealed.
+const FANFARE_TIME = 2.6                // s of opening sequence before the mouth
+
 export class Machine {
   constructor ({ seed = 1, spec = 'amadeji', tokens = 500, fireInterval = LAUNCH_INTERVAL } = {}) {
     const built = buildBoard()
@@ -594,19 +608,33 @@ export class Machine {
     // Read by the presentation layer, which slows the descending glissando as it
     // grows — the deeper in, the less the sound seems to be getting anywhere.
     this.chainDepth = (this.kakuhen > 0 ? (this.chainDepth || 0) : 0) + 1
-    this.jackpot = { round: 1, entries: 0, t: 0, shutAt: 0, paid: 0 }
-    this.parts.attacker.open = true
+    this.jackpot = { round: 1, entries: 0, t: 0, shutAt: 0, paid: 0, fanfare: FANFARE_TIME }
+    this.parts.attacker.open = false     // opens when the sequence ends
     this.celebrations++
     this.netPositiveEvents++
     this.emit('jackpot', {
       rounds: this.S.rounds,
       kakuhen: this.kakuhen > 0,
-      depth: this.chainDepth
+      depth: this.chainDepth,
+      // The ceiling, stated up front. It is a real number — rounds × entries
+      // × pay — and the sequence's length scales with it, which is the one
+      // dial the gambling-audio literature actually supports.
+      potential: this.S.rounds * this.S.entriesPerRound * this.S.payPerEntry,
+      build: FANFARE_TIME
     })
   }
 
   tickJackpot (dt) {
     const j = this.jackpot
+    if (j.fanfare > 0) {
+      j.fanfare -= dt
+      if (j.fanfare <= 0) {
+        j.fanfare = 0
+        this.parts.attacker.open = true
+        this.emit('jackpotOpen', { round: 1, of: this.S.rounds })
+      }
+      return                             // the round clock waits for the mouth
+    }
     j.t += dt
     if (j.t >= ROUND_TIME || (j.shutAt && this.time > j.shutAt && j.entries > 0)) this.endRound()
   }

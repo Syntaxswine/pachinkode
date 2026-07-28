@@ -293,6 +293,53 @@ identical to a dead chain (it now slams the gate, states a chord whose length is
 continuation probability, and restarts the Shepard descent *thinned* — the thing an old comment
 promised and the code never did).
 
+### The conditioning pass — a reward *family*, and how to keep it honest
+
+The operator asked how you would train a listener to hear reward in some sounds and neutrality
+in others, without ever building a true negative. The answer that came out of it is a design
+discipline worth keeping, because it is falsifiable rather than tasteful:
+
+1. **Contingency, not contiguity** (Rescorla 1968). A cue earns value only by *raising*
+   P(reward) above baseline. So the operational rule is not "play something nice on a win" but
+   **a reward cue may never fire when nothing was paid.** That is why the reward wash hooks the
+   `pay` event — the ledger — rather than each pocket: it is structurally incapable of a false
+   positive, and any payout source added later inherits it for free.
+2. **Neutrality is earned by being uninformative, not by being quiet.** The nail rain at
+   142 strikes/s is the perfect neutral precisely because it is constant and carries no
+   information — learned irrelevance. Mechanism sounds may be as loud and physical as you like.
+   What must be policed is the *middle*: a weakly-correlated cue is worse than either pole,
+   because it breeds superstition and **blocks** learning about the real cue (Kamin).
+3. **Never a punisher.** No sound is contingent on loss. Losses get the mechanism family,
+   because that is what a loss is: nothing happened. The only negative valence in the game stays
+   quarantined at varnish 0, where it is Dixon's unmasking experiment rather than punishment.
+4. **The rare tiers inherit.** Measured: koatari and ōatari fire **zero times in 13 minutes** of
+   continuous play. They cannot be trained directly — they borrow a response built by tulip
+   (0.30/s) and heso (0.08/s) through a shared motif. That borrowing is the actual mechanism
+   behind a jackpot jingle's power, and it is honest here only because every instance really paid.
+
+**Two defects this exposed, one of them mine, both unfixed:**
+
+- **The tray patter is spectrally inside the nail rain.** `cascade()` bandpasses 2200–4800 Hz;
+  the rain bed added this session sits at 2200 and 3600 Hz and the nail noise runs 2450–5390.
+  The sound of *being paid* is camouflaged by the sound of *playing*, and at ARCADE the rain is
+  continuous. Fix: move the tray down to a 700–1400 Hz body resonance (which is also what balls
+  in a plastic tray actually sound like — the current band is far too bright) and duck the rain
+  bed ~6 dB for 250 ms on every payout. The ratchet (850–1800 Hz square) has the mirror problem:
+  a neutral sound sitting in the reward register.
+- **The warp has an 18× lift and is silent.** Measured: P(heso) = 1.6% per ball, P(heso | warp)
+  = 28.6%, warps on 5.5% of balls. That is a genuinely predictive event with no cue on it — and
+  it is the honest version of the rising-pitch idea this repo cut, because it is earned by a
+  *measured contingency* rather than by contour folklore. Give it a family cousin that resolves
+  into the motif if the ball finds the pocket.
+
+**And the instrument that would make this a law rather than a taste:** `tools/cue-contingency.mjs`
+(prototype ran this session) computes, for every sound the game can make, P(payout within 400 ms
+| sound) against the base rate. Two enforceable assertions: *no reward-family sound may fire
+without a payment* (Δp ≈ 1) and *no neutral-family sound may carry contingency* (Δp ≈ 0 within
+noise). Then the game can show the player their own conditioning ledger — "you have heard the
+motif 63 times; every one was real; here is what they cost" — which is this project's whole
+argument applied to one more sense.
+
 ### Left undone, deliberately or honestly
 
 - The aim-spin idea from the first movement still stands (`makeBall` takes an angular velocity

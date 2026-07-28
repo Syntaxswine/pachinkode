@@ -350,6 +350,42 @@ closed-form crest inversion that printed FOUL below power ≈ 0.135 — where me
 of solo shots enter play. The real cliff: 99% at dial 0.00, 53% at 0.03, ~1% by 0.06. Same
 failure class as the old 50:50 tick, caught by the same kind of audit.
 
+### The opening sequence — anticipation, and why this one is allowed
+
+This project cut an ascending pitch contour in its first draft because no peer-reviewed work
+supports pitch-as-reward-anticipation in a gambling context. The jackpot's opening sequence
+(`FANFARE_TIME = 2.6 s`) builds anticipation anyway, and the difference is the whole point:
+
+**What it builds toward is genuinely undecided.** The verdict was sealed the instant the ball
+entered the pocket — that is the game's thesis and the reels are only a readout of it. But the
+*harvest* is not sealed: the ceiling is `rounds × entries × pay` (936 balls on amadeji), how
+much of it you take depends on getting onto the right-hand route, and the sequence is exactly
+the window in which you do that. The number is printed on the display while it runs. Suspense
+about a real unknown is not the manipulation this repo refuses; suspense about a fixed outcome
+is, and that one is still absent.
+
+**The mechanisms are rate and timbre, not melody.** The build is an accelerating tray roll
+(interval squeezed geometrically) plus a drone at *constant pitch* whose filter opens. Nothing
+ascends. Duration scales with the potential, which is the one dial Dixon's data supports.
+
+**It costs the player nothing.** The attacker stays shut and the round clock stays at zero
+until the mouth opens — verified: opens once at 2.601 s with the clock still at 0.0000, all
+rounds delivered afterwards. It gives back more than it takes: measured RTP *rose* when it went
+in, because a player who reacts is on the right route before the mouth opens rather than one
+ball behind it. Re-calibrate after touching it; a reaction window is an economy change.
+
+### The reward wash — a conditioning cue, built to the rules
+
+A pulse of light on every ball gained, driven by the `pay` event — the ledger itself — so it
+**cannot fire unless `won` moved**. Refunds deliberately do not reach it: a fouled ball coming
+back is a spend reversed, not a gain, and a cue that fired on both would teach a correlation the
+machine cannot honour. One invariant hue at every tier (a cue is recognised by constancy);
+magnitude carried by intensity, `√n` scaled, saturating rather than stacking so a jackpot
+cascade glows instead of strobing. At ~0.4 gains/second in ordinary play a hard flash would be
+unpleasant and a slow edge bloom is not. Pure lacquer: at varnish 0 there is no wash at all, so
+the conditioning it builds gets no reinforcement while the payout numbers keep appearing in ink.
+**The information survives the switch; the training does not.**
+
 ### The small win — mechanism VERIFIED, numbers DESIGN
 
 小当たり (koatari) — small-bonus outcomes where the attacker opens briefly — are a real feature

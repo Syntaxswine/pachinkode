@@ -275,6 +275,59 @@ test('charged shots are deterministic', () => {
   assert.equal(play(), play(), 'the pull mechanic is not deterministic')
 })
 
+test('the jackpot opening sequence costs the player no scoring time', () => {
+  // The sequence exists to give a reaction window, not to shorten the prize.
+  // If the round clock ever starts before the mouth opens, the player is being
+  // charged for the fanfare — which would make it a cost dressed as a
+  // celebration, the exact inversion this project exists to avoid.
+  const m = new Machine({ seed: 3, tokens: 99999 })
+  m.startJackpot()
+  let opens = 0, clockAtOpen = null
+  for (let i = 0; i < Math.round(6 / DT); i++) {
+    const wasShut = !m.parts.attacker.open
+    m.step(DT)
+    for (const ev of m.drain()) {
+      if (ev.type === 'jackpotOpen') { opens++; clockAtOpen = m.jackpot.t }
+    }
+    if (m.jackpot && m.jackpot.fanfare > 0) {
+      assert.ok(wasShut, 'the attacker was open during the opening sequence')
+      assert.equal(m.jackpot.t, 0, 'the round clock ran during the opening sequence')
+    }
+  }
+  assert.equal(opens, 1, `the mouth opened ${opens} times, expected exactly 1`)
+  assert.ok(clockAtOpen < DT * 2, `round clock was ${clockAtOpen} when the mouth opened`)
+})
+
+test('a reward cue can never fire without the ledger moving', () => {
+  // The conditioning law, stated as code: `pay` is the only event the reward
+  // wash listens to, so every cue must coincide with `won` increasing — and a
+  // refund (a spend reversed, not a gain) must never emit one.
+  const m = new Machine({ seed: 8, tokens: 4000 })
+  m.dial = 0.20
+  m.firing = true
+  let pays = 0, fouls = 0, guard = 0
+  let wonBefore = m.won
+  while (m.launched < 1200 && guard < 3e6) {
+    guard++
+    m.step(DT)
+    for (const ev of m.drain()) {
+      if (ev.type === 'pay') {
+        pays++
+        assert.ok(m.won > wonBefore, 'a pay event fired without `won` increasing')
+        assert.ok(ev.n > 0, `a pay event carried n=${ev.n}`)
+        wonBefore = m.won
+      }
+      // A refund must not masquerade as a gain.
+      if (ev.type === 'foul') {
+        fouls++
+        assert.equal(m.won, wonBefore, 'a refund moved the won ledger')
+      }
+    }
+  }
+  assert.ok(pays > 10, `expected payouts to occur, got ${pays}`)
+  assert.ok(fouls > 0, 'expected some fouls in the sample')
+})
+
 test('rate-dependent scatter cannot change any outcome by itself', () => {
   // Law L4 adjacent: the launcher is simulation, not presentation, so it MAY
   // affect outcomes — but it must do so only through the ball's speed, and it

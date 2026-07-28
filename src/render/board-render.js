@@ -30,6 +30,7 @@ export class Renderer {
     this.popups = []           // floating payout numbers — the truth, dressed
     this.shake = 0
     this.lampPulse = 0         // heso burst on the frame lamps
+    this.pulse = 0             // the reward wash — see rewardPulse()
     this._t = 0
     this._shownTokens = null   // the counter's displayed value, easing to truth
     this._tokGlow = 0
@@ -70,6 +71,40 @@ export class Renderer {
   /** A burst on the frame lamps — the board noticing a score. `k` is weight. */
   lampBurst (k = 1) { this.lampPulse = Math.max(this.lampPulse, Math.min(1, k)) }
 
+  /**
+   * The reward wash: a pulse of light through the whole room whenever a ball
+   * is gained.
+   *
+   * This is a conditioning cue, built to the rules that make one work:
+   *
+   *   ONE INVARIANT. Always the same hue, at every tier. A cue is recognised
+   *   by its constancy — varying the colour by payout would give the eye four
+   *   weak cues instead of one strong one. Magnitude is carried by intensity
+   *   and reach, never by hue.
+   *
+   *   NO FALSE POSITIVES. It is driven by the `pay` event, which is the
+   *   ledger itself — so it structurally cannot fire unless `won` moved.
+   *   Refunds deliberately do NOT reach it: a fouled ball coming back is a
+   *   spend reversed, not a gain, and a cue that fires on both would be
+   *   teaching a correlation the machine cannot honour.
+   *
+   *   NO STROBE. Pulses saturate rather than stack (a jackpot cascade lights
+   *   the room and holds it lit instead of flickering), and the form is a
+   *   slow edge bloom rather than a full-frame flash — in ordinary play this
+   *   fires about 0.4 times a second, and that is a rate at which a hard
+   *   flash would be unpleasant and a glow is not.
+   *
+   * Pure lacquer, so it obeys the switch completely: at varnish 0 there is no
+   * wash at all, and the conditioning it builds gets no reinforcement. The
+   * payout numbers keep appearing in ink — the information survives, the
+   * training does not. That is the whole argument, applied to one more sense.
+   */
+  rewardPulse (n = 1) {
+    // sqrt so +2 registers and +13 dominates without being six times louder.
+    const w = Math.min(1, Math.sqrt(Math.max(0, n)) / 3.6)
+    this.pulse = Math.min(1, this.pulse + w * (1 - this.pulse * 0.55))
+  }
+
   draw (machine, dop, varnish, dt) {
     const ctx = this.ctx
     const P = framePalette(dop, varnish)
@@ -101,9 +136,29 @@ export class Renderer {
     this.lamps(ctx, P, machine, dop, dt)
     this.popupLayer(ctx, P, dt)
     this.launcher(ctx, P, machine)
+    // Last, and additive: the room lighting up rather than a sheet over it.
+    this.rewardWash(ctx, P, w, h, dt)
 
     ctx.restore()
     this._t += dt
+  }
+
+  /** Draws the pulse set by rewardPulse(). Additive, edge-weighted, gated. */
+  rewardWash (ctx, P, w, h, dt) {
+    this.pulse = Math.max(0, this.pulse - dt / 0.45)
+    if (this.pulse < 0.01 || P.varnish <= 0.01) return
+    const k = this.pulse * this.pulse            // ease out — a bloom, not a blink
+    const cx = w / 2, cy = h / 2
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    // Edge-weighted: the centre, where the balls are, stays readable.
+    const g = ctx.createRadialGradient(cx, cy, Math.min(w, h) * 0.26, cx, cy, Math.max(w, h) * 0.78)
+    g.addColorStop(0, 'hsla(0 0% 0% / 0)')
+    g.addColorStop(0.55, hsl(44, P.saturation * 1.2, 0.5, 0.10 * k * P.varnish))
+    g.addColorStop(1, hsl(38, P.saturation * 1.3, 0.5, 0.30 * k * P.varnish))
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+    ctx.restore()
   }
 
   background (ctx, P, w, h, dop) {
@@ -283,7 +338,21 @@ export class Renderer {
     // watching the reels could not tell a resolution from a stall.
     const res = m.lastResolve
     const resFresh = !m.spin && res && m.time - res.at < 1.4
-    if (m.inJackpot) {
+    if (m.inJackpot && m.jackpot.fanfare > 0) {
+      // The opening sequence: the ceiling, and a bar closing on the moment the
+      // mouth opens. Both numbers are real — the ceiling is rounds × entries ×
+      // pay, and the bar is the actual countdown the simulation is running.
+      const j = m.jackpot
+      const k = 1 - j.fanfare / 2.6
+      ctx.font = `600 ${Math.max(9, h * 0.13)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(44, P.saturation * 1.5, 0.52 + 0.20 * Math.sin(this._t * 15))
+      ctx.fillText(`最大 ${m.S.rounds * m.S.entriesPerRound * m.S.payPerEntry}`, x0 + w / 2, y0 + h * 0.79)
+      const bw = w * 0.52, bx = x0 + w / 2 - bw / 2, by = y0 + h * 0.90
+      ctx.fillStyle = hsl(P.hue, P.saturation * 0.3, 0.20)
+      ctx.fillRect(bx, by, bw, Math.max(2, h * 0.022))
+      ctx.fillStyle = hsl(44, P.saturation * 1.4, 0.60)
+      ctx.fillRect(bx, by, bw * k, Math.max(2, h * 0.022))
+    } else if (m.inJackpot) {
       // The running count, in the room's own currency, while the attacker
       // swallows. This is the number the player is actually earning, live.
       const j = m.jackpot
@@ -830,7 +899,13 @@ export class Renderer {
     for (let i = 0; i < N; i++) {
       // Base breathing, phase-staggered so the frame shimmers rather than blinks.
       let b = (0.05 + 0.30 * dop.arousal) * (0.7 + 0.3 * Math.sin(t * 2.1 + i * 1.7))
-      if (m.inJackpot) {
+      if (m.inJackpot && m.jackpot.fanfare > 0) {
+        // Charging: the chase accelerates as the mouth approaches, and the
+        // whole frame lifts. Rate carries the build, exactly as it does in
+        // the audio — nothing here is pretending to predict anything.
+        const k = 1 - m.jackpot.fanfare / 2.6
+        b = ((i + Math.floor(t * (5 + 26 * k))) % 3 === 0) ? 1 : 0.06 + 0.30 * k
+      } else if (m.inJackpot) {
         // The chase: every third lamp lit, marching.
         b = ((i + Math.floor(t * 14)) % 3 === 0) ? 1 : 0.10
       } else if (m.kakuhen > 0) {

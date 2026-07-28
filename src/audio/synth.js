@@ -477,6 +477,75 @@ export class Synth {
   }
 
   /**
+   * The opening sequence — the build before the mouth opens.
+   *
+   * Two mechanisms, deliberately chosen, and neither is the pitch-contour
+   * folklore this file cut in its first draft:
+   *
+   *   ACCELERATING TEMPO. A tray roll whose interval shortens toward the drop.
+   *   Rate, not contour: the same grains the payout tray is made of, arriving
+   *   faster. It is also literally what a hopper sounds like spinning up.
+   *
+   *   OPENING FILTER. A held drone whose brightness climbs — the room's own
+   *   noise floor lifting. The pitch of every component is CONSTANT; only the
+   *   spectral centroid moves, which is timbre, not melody.
+   *
+   * The roll resolves INTO the reward motif, so the build becomes a
+   * second-order predictor of the family — and it never lies, because it only
+   * ever plays when a jackpot has already been won.
+   */
+  jackpotBuild (dur = 2.6, size = 0.5, varnish = 1) {
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const ctx = this.ctx
+    const t0 = ctx.currentTime
+    if (v < 0.5) {
+      // Unvarnished: one flat tick to mark the sequence, no swell.
+      this.tone(300, 0.06, 0.07, 'square', this.busImpacts)
+      return
+    }
+
+    // The accelerating roll. Intervals follow a geometric squeeze so the last
+    // few grains are almost a single sound.
+    let t = t0
+    let gap = 0.20
+    while (t < t0 + dur - 0.05) {
+      const nz = ctx.createBufferSource()
+      nz.buffer = this.noise
+      nz.playbackRate.value = 1.2 + Math.random() * 0.4
+      const bp = ctx.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.frequency.value = 1000 + Math.random() * 500     // tray body, under the rain
+      bp.Q.value = 2.2
+      const g = ctx.createGain()
+      const k = (t - t0) / dur
+      g.gain.setValueAtTime(0.045 * (0.5 + 0.9 * k) * v, t)
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.06)
+      nz.connect(bp).connect(g).connect(this.busRewards)
+      nz.start(t); nz.stop(t + 0.08)
+      t += gap
+      gap = Math.max(0.035, gap * 0.80)
+    }
+
+    // The drone: constant pitch, opening filter. Scaled by the size of what
+    // is now on the table.
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 110
+    const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 110 * 1.5
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'
+    f.frequency.setValueAtTime(220, t0)
+    f.frequency.linearRampToValueAtTime(2600, t0 + dur)
+    f.Q.value = 4
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.exponentialRampToValueAtTime(0.075 * (0.6 + 0.4 * clamp(size)) * v, t0 + dur * 0.9)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.10)
+    o.connect(f); o2.connect(f)
+    f.connect(g).connect(this.busRewards)
+    o.start(t0); o.stop(t0 + dur + 0.15)
+    o2.start(t0); o2.stop(t0 + dur + 0.15)
+  }
+
+  /**
    * Kakuhen: the chain lives. A win-paired chord — the jackpot's just-intonation
    * stack at half weight — whose duration is proportional to the REAL
    * continuation probability (catchP from the spec's own arithmetic), which is

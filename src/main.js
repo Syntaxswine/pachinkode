@@ -497,18 +497,32 @@ function handleEvents (events) {
         break
 
       case 'jackpot': {
+        // The opening sequence. What it builds toward is the HARVEST, which is
+        // genuinely undecided — the ceiling is printed and the mouth has not
+        // opened yet. The player's job during these seconds is to get right.
         dop.endRamp()
         dop.push(machine.S.rounds * machine.S.entriesPerRound * machine.S.payPerEntry * 0.35)
-        renderer.kick(1)
+        renderer.kick(0.45)
+        const size = Math.min(1, (ev.potential || 900) / 1500)
+        synth.shepardStop()
+        synth.jackpotBuild(ev.build, size, state.varnish)
+        banner('大当たり  ŌATARI', `up to ${ev.potential} balls — get right before the mouth opens`)
+        state.lifetime.jackpots++
+        break
+      }
+
+      case 'jackpotOpen': {
+        // The drop. The mouth, the stack, and the descent that never arrives.
         const size = Math.min(1, machine.S.rounds * machine.S.entriesPerRound *
           machine.S.payPerEntry / 1500)
+        renderer.kick(1)
+        renderer.lampBurst(1)
+        synth.gate(true, state.varnish)
         synth.jackpot(size, state.varnish)
         // The descent runs underneath the whole jackpot and never arrives —
         // which is the honest shape of a kakuhen chain. It stops when the chain does.
-        synth.shepardStop()
-        synth.shepard(200, state.varnish, (ev.depth || 1) - 1)
-        banner('大当たり  ŌATARI', 'hit the dial past the threshold — the attacker is on the right')
-        state.lifetime.jackpots++
+        synth.shepard(200, state.varnish, (machine.chainDepth || 1) - 1)
+        banner('開放  OPEN', 'the attacker is on the right-hand route')
         break
       }
 
@@ -549,6 +563,15 @@ function handleEvents (events) {
 
       case 'empty':
         banner('OUT OF TOKENS', 'press T for five hundred more — it will be noted')
+        break
+
+      case 'pay':
+        // Every ball gained, and nothing else. Hooked at the LEDGER rather
+        // than at each pocket, so the cue cannot fire unless `won` actually
+        // moved — and so any payout source added later inherits it for free.
+        // Refunds do not pass through pay(), and must not: a fouled ball
+        // returning is a spend reversed, not a gain.
+        renderer.rewardPulse(ev.n)
         break
 
       case 'holdOverflow':
