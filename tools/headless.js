@@ -107,21 +107,32 @@ function sweep () {
 }
 
 /**
- * Locate the route boundary empirically and check it against the closed form.
- * The board's header claims the split between left-hitting and right-hitting
- * falls out of v²/R ≥ g·sinθ; this is the measurement that keeps that claim honest.
+ * Measure the route split, and print a paste-ready ROUTE_ODDS table.
+ *
+ * The board's header explains the split from v²/R ≥ g·sinθ, and that explanation
+ * is right about *why* two routes exist. It is not enough to say *where* the
+ * split sits: a closed form from the launch energy puts even odds at dial 0.55,
+ * and the machine actually crosses at 0.19, because the closed form ignores
+ * everything the ball loses rattling up the channel. So the odds the HUD shows
+ * are measured here and pasted into board.js, and test/launcher.test.js checks
+ * the published table still matches the machine.
+ *
+ * Re-run this after ANY change to the rail, the launch speeds, or the board.
  */
 function threshold () {
-  const { world } = buildBoard()
-  console.log(`\n  predicted crest speed at the inner rail's end: ${thresholdCrestSpeed().toFixed(3)} m/s`)
-  console.log('\n  dial   right-route share   (balls passing x > 0.33 above y = 0.25)')
+  const balls = Math.max(60, args.balls)
+  console.log(`\n  closed-form crest speed at the inner rail's end: ${thresholdCrestSpeed().toFixed(3)} m/s`)
+  console.log(`  measuring ${balls} balls per dial position, seed ${args.seed}\n`)
+  console.log('  dial   right-route share   (balls passing x > 0.33 above y = 0.25)')
   console.log('  ' + '─'.repeat(62))
-  for (let p = 0; p <= 1.0001; p += 0.05) {
-    const m = new Machine({ seed: args.seed, tokens: 200 })
+
+  const rows = []
+  for (let p = 0; p <= 0.45001; p += 0.03) {
+    const m = new Machine({ seed: args.seed, tokens: balls + 60 })
     m.dial = p; m.firing = true
     const seen = new Map()
     let right = 0, total = 0, guard = 0
-    while (m.launched < 120 && guard < 4e6) {
+    while (m.launched < balls && guard < 6e6) {
       guard++
       m.step(DT)
       for (const b of m.world.balls) {
@@ -132,9 +143,26 @@ function threshold () {
       for (const ev of m.drain()) { if (ev.type === 'foul') total-- }
     }
     const share = total > 0 ? right / total : 0
+    rows.push([+p.toFixed(2), +share.toFixed(2)])
     console.log(`  ${p.toFixed(2)}   ${(share * 100).toFixed(0).padStart(3)}%  ${bar(share)}`)
   }
-  console.log()
+
+  // Enforce monotonicity before publishing — the underlying relationship is
+  // monotone and the wobble is sampling noise, but a non-monotone table would
+  // show the player odds that go backwards as they turn the dial up.
+  let run = 0
+  for (const r of rows) { run = Math.max(run, r[1]); r[1] = +run.toFixed(2) }
+  rows.push([1.00, rows[rows.length - 1][1]])
+
+  let flip = 0, gap = 1
+  for (const [d, s] of rows) if (Math.abs(s - 0.5) < gap) { gap = Math.abs(s - 0.5); flip = d }
+  console.log(`\n  even odds near dial ${flip.toFixed(2)} — the least predictable setting on the knob.`)
+  console.log('\n  Paste into src/sim/board.js as ROUTE_ODDS:\n')
+  const lines = []
+  for (let i = 0; i < rows.length; i += 5) {
+    lines.push('  ' + rows.slice(i, i + 5).map(([d, s]) => `[${d.toFixed(2)}, ${s.toFixed(2)}]`).join(', '))
+  }
+  console.log('export const ROUTE_ODDS = [\n' + lines.join(',\n') + '\n]\n')
 }
 
 function single () {

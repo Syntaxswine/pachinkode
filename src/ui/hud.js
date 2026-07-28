@@ -9,7 +9,7 @@
 // gap between wins the machine celebrated and wins that were actually net
 // positive. That last pair is the point of the whole exercise.
 
-import { thresholdCrestSpeed } from '../sim/board.js'
+import { thresholdCrestSpeed, routeOdds, coinFlipDial } from '../sim/board.js'
 
 const f1 = (x) => x.toFixed(1)
 const pct = (x) => (x * 100).toFixed(0) + '%'
@@ -31,6 +31,16 @@ export class Hud {
         <div class="stat"><span>conjured</span><span id="hConj">0</span></div>
         <div class="stat"><span>return</span><span id="hRtp">—</span></div>
         <div class="tiny" id="hYen"></div>
+      </div>
+
+      <div class="sect">
+        <div class="k">THE LAUNCHER</div>
+        <div class="stat"><span>dial</span><span id="hDial">—</span></div>
+        <div class="stat"><span>route</span><span id="hRoute">—</span></div>
+        <div class="stat"><span>scatter</span><span id="hScat">—</span></div>
+        <div class="meter uni"><i id="mScat" style="width:0%"></i></div>
+        <div class="stat"><span>shots</span><span id="hShots">0</span></div>
+        <div class="tiny" id="hLaunchNote"></div>
       </div>
 
       <div class="sect">
@@ -69,6 +79,7 @@ export class Hud {
           Press <b>V</b> to toggle.</div>
       </div>`
     for (const id of ['hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
+      'hDial', 'hRoute', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
       'hOdds', 'hSpins', 'hHolds', 'hJack', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
       'hVal', 'mVal', 'hMot', 'mMot', 'hDiss', 'hCeleb', 'hDeserved', 'hLdw', 'hVarn']) {
       this[id] = this.el.querySelector('#' + id)
@@ -89,6 +100,29 @@ export class Hud {
     // fastest a person is permitted to lose money at one of these.
     const yen = m.spent * 4
     this.hYen.textContent = `${m.spent} balls rented · ¥${yen.toLocaleString()} at the ¥4 ceiling`
+
+    // The launcher. Scatter is the live standard deviation the next shot gets,
+    // which is a function of how hard the mechanism has been worked — so this
+    // needle is the price of firing fast, shown before you pay it.
+    this.hDial.textContent = m.dial.toFixed(2)
+    // Route odds, measured rather than derived. The split between left-hitting
+    // and right-hitting is probabilistic — a ball's surviving energy at the top
+    // of the rail varies chaotically with how it rattled on the way up — so a
+    // LEFT/RIGHT label would be claiming a certainty the machine does not have.
+    const pRight = routeOdds(m.dial)
+    const near = Math.abs(pRight - 0.5) < 0.12
+    this.hRoute.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右`
+    this.hRoute.style.color = near ? 'var(--hot)' : 'var(--ink)'
+    const jn = Math.min(1, Math.max(0, (m.nextJitter - 0.0035) / (0.026 - 0.0035)))
+    this.hScat.textContent = '±' + (m.nextJitter * 100).toFixed(2) + '%'
+    this.mScat.style.width = (jn * 100).toFixed(0) + '%'
+    this.mScat.style.background = jn > 0.55 ? '#d4574a' : 'var(--hot)'
+    this.hShots.textContent = m.shots
+    this.hLaunchNote.textContent = jn > 0.6
+      ? 'Firing flat out. The hammer and the cradle never settle, and the shot spreads.'
+      : jn < 0.2
+        ? 'Rested. Single shots hold the dial almost exactly.'
+        : ''
 
     this.hOdds.textContent = '1 / ' + (m.kakuhen > 0 ? m.S.kakuhenOdds : m.S.jackpotOdds)
     this.hSpins.textContent = m.spins

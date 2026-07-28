@@ -7,7 +7,7 @@
 // honest control rather than a difficulty setting.
 
 import { Machine, SPECS, LAUNCH_INTERVAL, TULIP_PAY } from './sim/machine.js'
-import { BOARD, thresholdCrestSpeed } from './sim/board.js'
+import { BOARD, thresholdCrestSpeed, routeOdds } from './sim/board.js'
 import { Dopamine } from './sim/dopamine.js'
 import { Renderer } from './render/board-render.js'
 import { Synth } from './audio/synth.js'
@@ -169,9 +169,12 @@ canvas.addEventListener('pointercancel', () => { dragging = false; firingHeld = 
 
 function dialFromPointer (e) {
   const r = canvas.getBoundingClientRect()
-  // Bottom of the canvas is zero power, top is full. A vertical throw reads as
-  // "how hard", which is how a real handle feels.
-  setDial(1 - (e.clientY - r.top) / r.height)
+  // Map against the PLAYFIELD, not the whole canvas — the canvas now carries the
+  // launcher cabinet below the board, and including it would make the bottom
+  // eighth of the dial's travel land on a strip that is not the playfield.
+  const top = renderer.oy
+  const height = BOARD.h * renderer.scale
+  setDial(1 - ((e.clientY - r.top) - top) / height)
 }
 
 addEventListener('keydown', (e) => {
@@ -265,6 +268,12 @@ function handleEvents (events) {
       case 'hit':
         impactsThisFrame++
         synth.impact(ev.speed, ev.surface, state.varnish)
+        break
+
+      case 'launch':
+        // The hammer. Duller and looser the harder the mechanism is being worked,
+        // so a machine-gunned session audibly loses its crispness.
+        synth.launch(ev.dial, ev.worked, state.varnish)
         break
 
       case 'heso': {
@@ -389,13 +398,20 @@ function updateTopbar () {
   const crest2 = rolling * rolling - (10 / 7) * 9.80665 * 0.335
   const crest = crest2 > 0 ? Math.sqrt(crest2) : 0
   const el = $('#tRoute')
-  if (crest <= 0.02) { el.textContent = 'FOUL'; el.style.color = 'var(--faint)' } else if (crest < THRESHOLD) { el.textContent = '左 LEFT'; el.style.color = 'var(--cold)' } else { el.textContent = '右 RIGHT'; el.style.color = 'var(--hot)' }
+  const pRight = routeOdds(machine.dial)
+  const near = Math.abs(pRight - 0.5) < 0.12
+  if (crest <= 0.02) {
+    el.textContent = 'FOUL'
+    el.style.color = 'var(--faint)'
+  } else {
+    el.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右`
+    el.style.color = near ? 'var(--hot)' : 'var(--ink)'
+  }
 
-  const near = Math.abs(crest - THRESHOLD) < 0.10
   $('#tState').textContent = machine.inJackpot
     ? '大当たり — hit right'
     : machine.kakuhen > 0 ? `確変 ${machine.kakuhen}`
-      : near ? 'ON THE THRESHOLD — least predictable dial position' : ''
+      : near ? 'COIN FLIP — the least predictable dial position' : ''
   $('#tState').style.color = near ? 'var(--hot)' : 'var(--dim)'
 }
 

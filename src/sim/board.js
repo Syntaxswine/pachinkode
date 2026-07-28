@@ -18,15 +18,24 @@
 // rains down the middle of the board. Above it, the ball stays pinned to the
 // outer wall, carries all the way round, and comes down the far right.
 //
-// Two routes, one knob, and a hard boundary between them — which is precisely
-// what Japanese players call *hidari-uchi* and *migi-uchi*, left-hitting and
-// right-hitting. Nobody designed that binary into this file. It falls out of
-// v²/R ≥ g sin θ.
+// Two routes, one knob — which is precisely what Japanese players call
+// *hidari-uchi* and *migi-uchi*, left-hitting and right-hitting. Nobody designed
+// that split into this file. It falls out of v²/R ≥ g sin θ.
 //
-// And the dial position that sits exactly on the boundary is the one whose
-// outcome is least predictable. Maximum uncertainty lives at a specific,
-// findable place on the knob. The physics and the dopamine literature turn out
-// to be pointing at the same number. See docs/SCIENCE.md.
+// BUT IT IS NOT A HARD BOUNDARY, and an earlier version of this comment said it
+// was. Measured, the right-route share climbs smoothly from 5% at dial 0 to 99%
+// by dial 0.42, crossing even odds around 0.19. The energy a ball has left at
+// 250° is not set by launch speed alone: it rattles between the channel walls on
+// the way up and the surviving energy varies chaotically from shot to shot. So
+// the split is *probabilistic*, and it is fuzzy for an intrinsic reason rather
+// than because the launcher is imprecise — the fuzziness is still there with the
+// launcher fired from rest at its tightest.
+//
+// Which makes the real finding better than the clean one. There is a dial
+// position where you genuinely cannot know which way a ball will go, it is
+// findable, and it sits essentially on top of the setting that best feeds the
+// start pocket. Maximum uncertainty and maximum value at the same place on the
+// knob. See ROUTE_ODDS below and docs/SCIENCE.md §4.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { World, makeBall, MAT, BALL_R } from './world.js'
@@ -40,6 +49,10 @@ import { closestOnSegment } from './vec.js'
 export const BOARD = {
   w: 0.440,
   h: 0.490,
+  // Render-only strip below the playfield holding the launcher cutaway. Not part
+  // of the simulated world — no ball ever enters it — but the mechanism it shows
+  // is real state, read straight off the Machine.
+  cabinetH: 0.086,
   rail: { cx: 0.220, cy: 0.246, r: 0.206, gap: 0.0200 },
   railStart: 130,      // deg — where the ball enters the channel, bottom-left
   railInnerEnd: 250,   // deg — the threshold. See the header note.
@@ -274,6 +287,51 @@ export function launchPoint () {
  * Exported because the HUD marks it on the dial, and because tools/calibrate.js
  * checks that the measured boundary matches this closed form.
  */
+/**
+ * Measured probability that a ball takes the right-hand route, by dial setting.
+ *
+ * This is data, not a model. A closed-form estimate from the launch energy and
+ * the rail climb puts the boundary at dial 0.55; the machine actually crosses
+ * even odds at 0.19, because the closed form ignores everything the ball loses
+ * rattling up the channel. The estimate was wrong by a third of the dial's
+ * travel, and it was being drawn on the HUD as a tick mark.
+ *
+ * Regenerate with:  node tools/headless.js --threshold --balls 220
+ * Sampled at 220 balls per point, monotonicity enforced (the wobble is sampling
+ * noise; the underlying relationship is monotone and odds that went backwards as
+ * you turned the dial up would be a lie in the other direction).
+ */
+export const ROUTE_ODDS = [
+  [0.00, 0.10], [0.03, 0.10], [0.06, 0.18], [0.09, 0.27], [0.12, 0.31],
+  [0.15, 0.42], [0.18, 0.48], [0.21, 0.58], [0.24, 0.64], [0.27, 0.75],
+  [0.30, 0.85], [0.33, 0.93], [0.36, 0.95], [0.39, 0.98], [0.42, 0.99],
+  [0.45, 1.00], [1.00, 1.00]
+]
+
+/** P(right-hand route) at a dial setting, interpolated from the measurements. */
+export function routeOdds (dial) {
+  const d = Math.max(0, Math.min(1, dial))
+  for (let i = 1; i < ROUTE_ODDS.length; i++) {
+    const [x1, y1] = ROUTE_ODDS[i]
+    if (d <= x1) {
+      const [x0, y0] = ROUTE_ODDS[i - 1]
+      const t = x1 === x0 ? 0 : (d - x0) / (x1 - x0)
+      return y0 + (y1 - y0) * t
+    }
+  }
+  return ROUTE_ODDS[ROUTE_ODDS.length - 1][1]
+}
+
+/** The dial setting where the two routes are closest to even odds. */
+export function coinFlipDial () {
+  let best = 0, bestGap = 1
+  for (let d = 0; d <= 1.0001; d += 0.005) {
+    const gap = Math.abs(routeOdds(d) - 0.5)
+    if (gap < bestGap) { bestGap = gap; best = d }
+  }
+  return best
+}
+
 export function thresholdCrestSpeed () {
   const inward = -Math.sin(BOARD.railInnerEnd * D2R)   // radial component of g, outward-positive
   return Math.sqrt(Math.max(0, inward) * 9.80665 * R.r)

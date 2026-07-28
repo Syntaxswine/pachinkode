@@ -12,7 +12,7 @@
 // dopamine signal happen, in colour, on a board that taught itself the map.
 
 import { framePalette, trailColour, hsl } from './palette.js'
-import { BOARD } from '../sim/board.js'
+import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 
 const TAU = Math.PI * 2
 const TRAIL_MAX = 26
@@ -35,10 +35,11 @@ export class Renderer {
     this.canvas.style.height = cssH + 'px'
     this.cssW = cssW
     this.cssH = cssH
-    // Fit the board with a margin, preserving aspect.
-    this.scale = Math.min(cssW / (BOARD.w * 1.06), cssH / (BOARD.h * 1.06))
+    // Fit the playfield plus the launcher cabinet, preserving aspect.
+    const totalH = BOARD.h + BOARD.cabinetH
+    this.scale = Math.min(cssW / (BOARD.w * 1.06), cssH / (totalH * 1.04))
     this.ox = (cssW - BOARD.w * this.scale) / 2
-    this.oy = (cssH - BOARD.h * this.scale) / 2
+    this.oy = (cssH - totalH * this.scale) / 2
   }
 
   /** Board metres → canvas pixels. */
@@ -77,6 +78,7 @@ export class Renderer {
     this.pockets(ctx, P, machine, dop)
     this.trailsAndBalls(ctx, P, machine, dop, dt)
     this.flashLayer(ctx, P, dt)
+    this.launcher(ctx, P, machine)
 
     ctx.restore()
   }
@@ -431,6 +433,209 @@ export class Renderer {
       ctx.stroke()
     }
   }
+
+  /**
+   * The launcher, cut away.
+   *
+   * A real cabinet hides all of this behind a round handle: you rotate a dial and
+   * a hammer you never see strikes a ball you never see. Showing the mechanism is
+   * the same move the rest of the game makes — put the machine's interior on the
+   * outside — and it makes the one control you actually have legible.
+   *
+   * Everything drawn here is real state read off the Machine. The hammer's draw
+   * is `dial`, its strike is `hammer`, the readiness lamp is `readiness`, and the
+   * scatter arc is `nextJitter` — the actual standard deviation the next shot
+   * will be given. The threshold tick is `thresholdCrestSpeed()` solved back
+   * through the rail climb, so it marks the true boundary between the two routes.
+   */
+  launcher (ctx, P, m) {
+    const y0 = this.Y(BOARD.h) + this.S(0.008)
+    const h = this.S(BOARD.cabinetH - 0.012)
+    const x0 = this.X(0.010)
+    const w = this.S(BOARD.w - 0.020)
+    const mid = y0 + h * 0.44
+
+    // Casing.
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.22, P.brightness * 0.16)
+    ctx.fillRect(x0, y0, w, h)
+    ctx.strokeStyle = P.boardEdge
+    ctx.lineWidth = 1
+    ctx.strokeRect(x0, y0, w, h)
+
+    // ── the travel scale ──
+    const railL = x0 + w * 0.06
+    const railR = x0 + w * 0.62
+    const span = railR - railL
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.26)
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(railL, mid + this.S(0.011)); ctx.lineTo(railR, mid + this.S(0.011)); ctx.stroke()
+    for (let i = 0; i <= 10; i++) {
+      const x = railL + span * (i / 10)
+      const big = i % 5 === 0
+      ctx.beginPath()
+      ctx.moveTo(x, mid + this.S(0.011))
+      ctx.lineTo(x, mid + this.S(big ? 0.017 : 0.014))
+      ctx.stroke()
+    }
+
+    // Where the two routes are closest to even odds — measured, not derived.
+    const tDial = this.thresholdDial()
+    if (tDial > 0 && tDial < 1) {
+      const tx = railL + span * tDial
+      ctx.strokeStyle = hsl(44, P.saturation * 1.3, 0.55)
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.moveTo(tx, mid - this.S(0.016)); ctx.lineTo(tx, mid + this.S(0.019)); ctx.stroke()
+      ctx.font = `500 ${Math.max(7, this.S(0.0075))}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(44, P.saturation * 1.1, 0.52)
+      ctx.textAlign = 'center'
+      ctx.fillText('50:50', tx, mid + this.S(0.030))
+      ctx.textAlign = 'left'
+    }
+
+    // The live route odds at the current dial, drawn as a split bar above the
+    // rail. The split is genuine — this is measured behaviour, not a model — and
+    // it is the honest replacement for a LEFT/RIGHT label that was pretending the
+    // boundary is sharp.
+    const pRight = routeOdds(m.dial)
+    const obY = y0 + h * 0.20
+    const obX = x0 + w * 0.22, obW = w * 0.34, obH = this.S(0.006)
+    ctx.fillStyle = hsl(212, P.saturation * 0.7, 0.42)
+    ctx.fillRect(obX, obY - obH / 2, obW * (1 - pRight), obH)
+    ctx.fillStyle = hsl(30, P.saturation * 0.9, 0.50)
+    ctx.fillRect(obX + obW * (1 - pRight), obY - obH / 2, obW * pRight, obH)
+    ctx.font = `500 ${Math.max(7, this.S(0.0072))}px ui-monospace, monospace`
+    ctx.fillStyle = P.inkDim
+    ctx.textAlign = 'right'
+    ctx.fillText(`左 ${Math.round((1 - pRight) * 100)}`, obX - this.S(0.004), obY + this.S(0.003))
+    ctx.textAlign = 'left'
+    ctx.fillText(`${Math.round(pRight * 100)} 右`, obX + obW + this.S(0.004), obY + this.S(0.003))
+
+    // ── the hammer ──
+    // Drawn back in proportion to the dial, snapping forward on a shot.
+    const draw = m.dial
+    const strike = m.hammer * m.hammer
+    const hy = mid
+    const hw = this.S(0.011)
+    const hh = this.S(0.020)
+    const hx = railL + hw + (span - hw * 2) * draw * (1 - strike)
+    const anchorX = railR + this.S(0.006)
+
+    // Return spring, between the back of the hammer and its anchor. The zigzag
+    // keeps a fixed number of coils over a shrinking span, so drawing the hammer
+    // back visibly compresses it.
+    const back = hx + hw
+    const amp = this.S(0.0062)
+    const N = 18
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.28, 0.34 + 0.16 * draw)
+    ctx.lineWidth = Math.max(1, this.S(0.0015))
+    ctx.beginPath()
+    ctx.moveTo(back, hy)
+    for (let i = 1; i < N; i++) {
+      const sx = back + (anchorX - back) * (i / N)
+      ctx.lineTo(sx, hy + (i % 2 ? -amp : amp))
+    }
+    ctx.lineTo(anchorX, hy)
+    ctx.stroke()
+
+    // Anchor block.
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.2, 0.30)
+    ctx.fillRect(anchorX, hy - this.S(0.012), this.S(0.005), this.S(0.024))
+
+    // The hammer head.
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.30, 0.44 + 0.34 * strike)
+    ctx.fillRect(hx - hw, hy - hh / 2, hw * 2, hh)
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.45, 0.70 + 0.25 * strike)
+    ctx.lineWidth = 1
+    ctx.strokeRect(hx - hw, hy - hh / 2, hw * 2, hh)
+
+    // Draw-length bracket under the hammer, so the pull-back is measurable and
+    // not just felt.
+    ctx.strokeStyle = hsl(44, P.saturation * (0.5 + 0.6 * draw), 0.50)
+    ctx.lineWidth = Math.max(1, this.S(0.0018))
+    ctx.beginPath()
+    ctx.moveTo(railL, mid + this.S(0.011))
+    ctx.lineTo(hx, mid + this.S(0.011))
+    ctx.stroke()
+
+    // The ball in the cradle, waiting to be struck. Fades in as the mechanism
+    // comes back off its lockout.
+    const br = this.S(0.0055)
+    const ready = m.readiness
+    ctx.globalAlpha = 0.20 + 0.80 * ready
+    const bx = railL - this.S(0.011)
+    const g = ctx.createRadialGradient(bx - br * 0.35, hy - br * 0.4, br * 0.1, bx, hy, br)
+    g.addColorStop(0, '#fff'); g.addColorStop(0.55, P.ball); g.addColorStop(1, 'hsla(0 0% 28% / 1)')
+    ctx.fillStyle = g
+    ctx.beginPath(); ctx.arc(bx, hy, br, 0, TAU); ctx.fill()
+    ctx.globalAlpha = 1
+    // Cradle lip.
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.34)
+    ctx.lineWidth = Math.max(1, this.S(0.0018))
+    ctx.beginPath()
+    ctx.moveTo(bx - br * 1.5, hy + br * 1.2)
+    ctx.lineTo(bx + br * 1.1, hy + br * 1.2)
+    ctx.stroke()
+
+    // ── scatter readout ──
+    // A cone whose half-angle is the real standard deviation the next shot gets.
+    const sx0 = x0 + w * 0.70
+    const sw = w * 0.27
+    const jitNorm = Math.min(1, Math.max(0, (m.nextJitter - 0.0035) / (0.026 - 0.0035)))
+    const boxT = mid - this.S(0.020)
+    const boxH = this.S(0.040)
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.2, 0.09)
+    ctx.fillRect(sx0, boxT, sw, boxH)
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.24)
+    ctx.lineWidth = 1
+    ctx.strokeRect(sx0, boxT, sw, boxH)
+
+    ctx.save()
+    ctx.beginPath(); ctx.rect(sx0, boxT, sw, boxH); ctx.clip()
+    const apex = sx0 + sw * 0.12
+    const tip = sx0 + sw * 0.94
+    const spread = this.S(0.0035 + 0.015 * jitNorm)
+    ctx.globalAlpha = 0.40
+    ctx.strokeStyle = P.inkDim
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(apex, mid); ctx.lineTo(tip, mid); ctx.stroke()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = hsl(jitNorm > 0.55 ? 8 : 150, P.saturation * (0.6 + 0.7 * jitNorm), 0.52)
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    ctx.moveTo(apex, mid); ctx.lineTo(tip, mid - spread)
+    ctx.moveTo(apex, mid); ctx.lineTo(tip, mid + spread)
+    ctx.stroke()
+    ctx.restore()
+
+    ctx.font = `500 ${Math.max(7, this.S(0.0072))}px ui-monospace, monospace`
+    ctx.fillStyle = P.inkDim
+    ctx.textAlign = 'left'
+    ctx.fillText('SCATTER', sx0, boxT - this.S(0.005))
+    ctx.fillStyle = hsl(jitNorm > 0.55 ? 8 : 150, P.saturation * 0.9, 0.58)
+    ctx.textAlign = 'right'
+    ctx.fillText(`±${(m.nextJitter * 100).toFixed(2)}%`, sx0 + sw, boxT - this.S(0.005))
+    ctx.textAlign = 'left'
+
+    // Readiness lamp and label, above the rail rather than on top of the ball.
+    ctx.fillStyle = ready >= 1
+      ? hsl(150, P.saturation * 1.1, 0.55)
+      : hsl(P.hue, P.saturation * 0.3, 0.14 + 0.24 * ready)
+    ctx.beginPath()
+    ctx.arc(x0 + w * 0.030, y0 + h * 0.20, Math.max(2, this.S(0.0034)), 0, TAU)
+    ctx.fill()
+    ctx.fillStyle = P.inkDim
+    ctx.fillText('LAUNCHER', x0 + w * 0.055, y0 + h * 0.24)
+  }
+
+  /**
+   * The dial setting where the two routes are closest to a coin flip.
+   *
+   * Measured, not derived. Inverting the launch energy through the rail climb
+   * puts this at 0.55; the machine crosses even odds at 0.19, because that
+   * closed form ignores everything the ball loses rattling up the channel. This
+   * tick was drawn in the wrong third of the dial until the measurement was run.
+   */
+  thresholdDial () { return coinFlipDial() }
 
   /** Prediction-error flashes: the visible δ. */
   flashLayer (ctx, P, dt) {

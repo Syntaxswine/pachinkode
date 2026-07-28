@@ -84,20 +84,41 @@ The launch channel's inner wall stops just before the crest. A ball arriving the
 the outer wall only if `v²/R ≥ g·sin θ` — about **1.38 m/s**. Below that it falls inward and rains
 down the middle. Above it, it carries all the way round and comes down the far right.
 
-Two routes, one knob, and a hard boundary between them — which is precisely what Japanese players
-call *hidari-uchi* and *migi-uchi*, left-hitting and right-hitting. That binary is not in the
-source. It falls out of the centripetal condition.
+Two routes, one knob — which is precisely what Japanese players call *hidari-uchi* and
+*migi-uchi*, left-hitting and right-hitting. That split is not in the source. It falls out of the
+centripetal condition.
 
-And the dial position sitting exactly on that boundary is the one whose outcome is least
-predictable. **Maximum uncertainty lives at a findable place on the knob**, and the HUD marks it.
-The physics and the dopamine literature turn out to be pointing at the same number.
+But it is not a *sharp* boundary, and finding that out was the better result. Measured, the
+right-route share climbs smoothly from 10% at dial 0 to 99% by 0.42, crossing even odds at **0.19**
+— because a ball's surviving energy at the top of the rail depends on how it rattled up the
+channel, which varies chaotically shot to shot. So the HUD shows you live odds rather than a
+label, and they are measured numbers, not a model.
+
+Which means there is a dial position where you genuinely cannot know which way a ball will go —
+and it sits almost exactly on the setting that best feeds the start pocket. **Maximum uncertainty
+and maximum value at the same place on the knob.**
+
+## One knob, and now you can see it
+
+The launcher is drawn as a cutaway below the board: the hammer draws back with the dial, the
+return spring compresses, a ball waits in the cradle, and a cone shows the scatter your next shot
+will actually get.
+
+**Tap for a single deliberate shot; hold for continuous fire.** Tapping is real technique —
+単発打ち — and it costs you volume. Holding costs you accuracy: a shot from rest scatters ±0.35%,
+one fired flat out ±2.60%. The hammer, its return spring and the ball in the cradle never fully
+settle at the legal maximum rate.
+
+That trade bites hardest exactly where it matters. Sit on the coin-flip dial and fire deliberately
+and you can hold it; machine-gun and you straddle it at random.
 
 ## Controls
 
 | | |
 |---|---|
 | Drag on the board | set launch strength (up is harder) |
-| Hold, or **Space** | fire |
+| **Tap** | fire one ball — deliberate, precise |
+| **Hold**, or **Space** | continuous fire at the legal 100/minute |
 | **↑ ↓** (with Shift) | fine dial adjustment |
 | **V** | toggle varnish |
 | **T** | conjure 500 tokens — recorded in the ledger, because a parlour would never tell you |
@@ -119,7 +140,8 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 26 tests: physics, determinism, varnish law, value learning, the Shepard illusion
+npm test                        # 36 tests: physics, determinism, varnish law, value learning,
+                                #   the launcher's legal rate, the Shepard illusion
 node tools/board-audit.js       # find ball traps in the geometry before they find your statistics
 node tools/calibrate.js         # measure RTP against the real regulatory bands
 node tools/headless.js --sweep  # dial sweep: where every ball ends up, per dial position

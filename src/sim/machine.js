@@ -69,6 +69,33 @@ export function chainLength (S) {
 
 // Regulated and near-regulated constants.
 export const LAUNCH_INTERVAL = 0.6      // s — 100 balls/min is the legal ceiling
+
+// ── The launcher's memory ───────────────────────────────────────────────────
+//
+// A shot fired from rest is precise. A shot fired while the mechanism is still
+// recovering from the last one is not.
+//
+// The physical story: modern machines drive the hammer (打球杆) with a rotary
+// solenoid working against a return spring, and a fresh ball has to drop into
+// the cradle and settle before it is struck. Flat out at the legal maximum,
+// neither has fully seated — the spring is still returning, the coil is warm,
+// and the ball is still moving in the cradle when the hammer arrives. Tapping
+// out single shots gives all three time to come to rest.
+//
+// `heat` is a leaky accumulator over recent shots: it rises by one per launch
+// and decays with LAUNCH_TAU, so it measures how hard the mechanism has been
+// worked lately rather than just the gap since the last shot. Sustained fire is
+// therefore worse than one quick double-tap, which is the right shape.
+//
+// HONESTY NOTE: nobody publishes launcher scatter, and real machines are
+// famously consistent — precise aiming at one gap (ぶっこみ狙い) is a recognised
+// skill. The mechanism above is plausible and the *direction* is defensible, but
+// the magnitudes are a design choice, not a measurement. Marked DESIGN in
+// docs/SCIENCE.md and it should stay marked.
+const LAUNCH_TAU = 1.2                  // s — how fast the mechanism forgets
+const HEAT_FULL = 1.6                   // heat at which scatter is maxed out
+export const JITTER_COLD = 0.0035       // relative sd, fired from rest
+export const JITTER_HOT = 0.026         // relative sd, firing flat out
 export const HESO_PAY = 3               // balls returned for a start-pocket entry
 export const TULIP_PAY = 2
 const HOLD_MAX = 4                      // 保留 — the legal pending-ball queue depth
@@ -87,10 +114,17 @@ export class Machine {
     this.spec = SPECS[spec] ? spec : 'amadeji'
     this.S = SPECS[this.spec]
 
-    this.dial = 0.55
+    this.dial = 0.20
     this.firing = false
-    this.sinceLaunch = 0
+    this.sinceLaunch = LAUNCH_INTERVAL      // start ready, so the first tap fires
     this.time = 0
+
+    // Launcher state. `heat` drives scatter; the rest is read by the renderer.
+    this.heat = 0
+    this.hammer = 0            // 0 = drawn back, 1 = mid-strike; decays after a shot
+    this.lastJitter = JITTER_COLD
+    this.lastSpeed = 0
+    this.shots = 0
 
     // The token ledger. Three numbers, all shown to the player.
     //   spent    — tokens converted into balls
@@ -125,6 +159,15 @@ export class Machine {
   drain () { const e = this.events; this.events = []; return e }
 
   get odds () { return this.kakuhen > 0 ? this.S.kakuhenOdds : this.S.jackpotOdds }
+
+  /** 0..1 — how worked the launcher is right now. 0 is rested, 1 is flat out. */
+  get worked () { return Math.min(1, this.heat / HEAT_FULL) }
+
+  /** 0..1 — how close the next shot is to being allowed. Drives the readiness lamp. */
+  get readiness () { return Math.min(1, this.sinceLaunch / LAUNCH_INTERVAL) }
+
+  /** Relative sd the NEXT shot would get, if fired this instant. */
+  get nextJitter () { return JITTER_COLD + (JITTER_HOT - JITTER_COLD) * this.worked }
 
   /**
    * The three symbols the display will settle on, derived from the spin index
@@ -172,19 +215,44 @@ export class Machine {
 
     // --- launcher ---------------------------------------------------------
     this.sinceLaunch += dt
+    // The mechanism forgets its last shot exponentially.
+    this.heat *= Math.exp(-dt / LAUNCH_TAU)
+    this.hammer *= Math.exp(-dt / 0.055)
+
     if (this.firing && this.sinceLaunch >= LAUNCH_INTERVAL) {
-      this.sinceLaunch -= LAUNCH_INTERVAL
+      // Reset to zero rather than carrying the remainder forward. Two reasons,
+      // and both are about the ceiling being a LEGAL one:
+      //
+      //   Carrying credit lets a long idle bank seconds of `sinceLaunch`, and the
+      //   next trigger press then empties a burst of balls in consecutive frames.
+      //
+      //   Even during steady fire, carrying lets discretisation shave a tick off
+      //   a gap — measured mean 0.599995 s, which is 100.0008 balls/minute and
+      //   therefore over. Zeroing rounds every interval UP to the next tick, so
+      //   the machine can only ever fire slower than the ceiling, never faster.
+      //   For a limit you are not allowed to exceed, that is the correct
+      //   direction to be wrong in.
+      this.sinceLaunch = 0
+
       if (this.tokens > 0) {
         this.tokens--
         this.spent++
         this.launched++
+        this.shots++
+
+        // Scatter is read BEFORE this shot's own heat is added, so a shot fired
+        // from rest gets the cold figure.
+        const worked = Math.min(1, this.heat / HEAT_FULL)
+        const jitter = JITTER_COLD + (JITTER_HOT - JITTER_COLD) * worked
+        this.lastJitter = jitter
+        this.heat += 1
+        this.hammer = 1
+
         const lp = launchPoint()
-        // Real launchers scatter. A solenoid-driven hammer striking a steel ball
-        // is repeatable to maybe a percent, and that percent is the difference
-        // between the two routes when the dial sits on the threshold.
-        const s = this.speedFor(this.dial) * (1 + this.rng.normal(0, 0.010))
+        const s = this.speedFor(this.dial) * (1 + this.rng.normal(0, jitter))
+        this.lastSpeed = s
         w.spawn(makeBall(lp.x, lp.y, lp.dx * s, lp.dy * s, { dial: this.dial }))
-        this.emit('launch', { speed: s, dial: this.dial })
+        this.emit('launch', { speed: s, dial: this.dial, jitter, worked })
       } else {
         this.firing = false
         this.emit('empty')

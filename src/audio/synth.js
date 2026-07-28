@@ -448,6 +448,48 @@ export class Synth {
     }
   }
 
+  /**
+   * The hammer striking a ball.
+   *
+   * A solenoid thunk plus the ring of steel on steel. `worked` is how hard the
+   * mechanism is being driven, 0..1 — the harder it is worked the duller and
+   * looser the strike, so a machine-gunned session audibly loses its crispness
+   * at the same time as it loses its accuracy. Same state, two senses.
+   */
+  launch (dial = 0.5, worked = 0, varnish = 1) {
+    if (!this.ready) return
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const v = clamp(varnish)
+    const w = clamp(worked)
+
+    // The solenoid: a short low thud, pitched slightly by draw length.
+    const o = ctx.createOscillator()
+    o.type = 'sine'
+    o.frequency.setValueAtTime(150 + dial * 60, t)
+    o.frequency.exponentialRampToValueAtTime(58, t + 0.07)
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.10 * (0.5 + 0.5 * v), t)
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.09)
+    o.connect(g).connect(this.busImpacts)
+    o.start(t); o.stop(t + 0.11)
+
+    // The strike itself: a noise transient through a bandpass that dulls as the
+    // mechanism heats.
+    const nz = ctx.createBufferSource()
+    nz.buffer = this.noise
+    nz.playbackRate.value = 1.3 + dial * 0.5
+    const bp = ctx.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.value = (2600 - 1200 * w) * (0.85 + 0.3 * dial)
+    bp.Q.value = 1.4 - 0.7 * w
+    const ng = ctx.createGain()
+    ng.gain.setValueAtTime(0.075 * (0.45 + 0.55 * v) * (1 - 0.35 * w), t)
+    ng.gain.exponentialRampToValueAtTime(0.0004, t + 0.030 + 0.02 * w)
+    nz.connect(bp).connect(ng).connect(this.busImpacts)
+    nz.start(t); nz.stop(t + 0.06)
+  }
+
   /** UI. */
   click () { this.tone(520, 0.05, 0.09, 'square', this.busImpacts) }
   select () { this.tone(760, 0.09, 0.11, 'triangle', this.busImpacts) }
