@@ -612,9 +612,10 @@ measured arrival spread so a starved mouth is still worth drafting.
   lapsing, which makes PATIENT CHAINS a weak part at the default fire rate and a strong one at
   REGULATION. That is coherent — it is documented as "what makes the slow, legal machine playable"
   — but it has not been measured at all three rates, and it should be.
-- **Bucket entries are not a reward cue.** They pay a ball, so they reach `rewardPulse` through the
-  ledger like everything else, but they have no voice of their own. They are the loudest visual
-  event in the game and the quietest audible one.
+- **Bucket entries share the tray cascade rather than having a voice.** They pay a ball, so they
+  inherit the existing reward vocabulary through the ledger — which is Builder 2's rule working
+  as designed. Whether a scoring pocket DESERVES its own family member is a real open question,
+  and it is exactly the sort of thing the unbuilt conditioning ledger exists to settle.
 - **The auto-player does not aim.** Every difficulty number here is therefore a FLOOR on what a
   human can do, which is the right direction to be wrong in but makes the curve conservative.
 - Builder 1's nail-bending keystone is still unbuilt — though the loadout layer now bends the life

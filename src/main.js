@@ -336,6 +336,14 @@ for (const [key, S] of Object.entries(SPECS)) {
   const b = document.createElement('button')
   b.textContent = S.label
   b.addEventListener('click', () => {
+    // Changing class starts a new machine, and a new machine mid-run would
+    // silently delete the run — the options sheet is reachable from the play
+    // screen. During a run the CABINET owns the spec, so this is refused
+    // outright rather than allowed to quietly cost somebody eight floors.
+    if (run && run.status !== 'failed') {
+      banner('NOT MID-RUN', 'the cabinet chose the class — this is a FREE PLAY setting')
+      return
+    }
     state.spec = key
     syncSpec()
     newSession()
@@ -379,8 +387,14 @@ $('#resetSave').addEventListener('click', () => {
   localStorage.removeItem(SAVE_KEY)
   state.tokens = 500
   state.lifetime = { spent: 0, won: 0, jackpots: 0, balls: 0 }
+  // The unlock ladder is part of "no memory of you" and must go with the rest.
+  // Leaving it behind would make the reset a lie in the player's favour, which
+  // is still a lie.
+  state.meta = newMeta()
+  run = null
   newSession()
-  banner('FORGOTTEN', 'the machine has no memory of you')
+  syncMeta()
+  banner('FORGOTTEN', 'the machine has no memory of you — cabinets relocked')
 })
 
 // ── input ──────────────────────────────────────────────────────────────────
@@ -725,6 +739,21 @@ function handleEvents (events) {
         synth.cascade(9, state.varnish)
         break
       }
+
+      case 'bucket':
+        // A bucket is the loudest thing on the screen and was the quietest
+        // thing in the room. It gets the tray cascade every other paying
+        // pocket gets — the reward in the room's own currency — and nothing
+        // new: a bucket pays a ball, so it belongs to the vocabulary that
+        // already exists rather than earning a voice of its own. That is
+        // Builder 2's rule working as intended (docs/HANDOFF.md): hook the
+        // LEDGER, and a payout source added later inherits the family free.
+        dop.settle(ev.ball, ev.n)
+        dop.push(ev.n)
+        renderer.flash(ev.x, ev.y, 0.7)
+        renderer.lampBurst(0.5)
+        synth.cascade(4, state.varnish)
+        break
 
       case 'tulip':
         dop.settle(ev.ball, TULIP_PAY)
