@@ -221,7 +221,14 @@ export class Dopamine {
     const rain = Math.min(1, (ctx.impacts || 0) / 90)
     this.impactRate += (rain - this.impactRate) * Math.min(1, dt * 4)
     const drive = 0.45 * this.impactRate + 0.30 * traffic + this.ramp
-    this.arousal += (drive - this.arousal) * Math.min(1, dt * (drive > this.arousal ? 1.8 : 0.5))
+    // Arousal rises fast and falls slowly — a ~0.55 s rise against a ~9 s decay.
+    // The asymmetry is the point: autonomic arousal does not switch off when the
+    // stimulus does, it has a long tail, which is why a machine still feels
+    // charged for a while after the last ball drains. An earlier 2 s decay made
+    // the board snap back to grey the instant you stopped firing, which read as
+    // the colour being broken rather than as the model being calm.
+    const aRate = drive > this.arousal ? 1.8 : 0.11
+    this.arousal += (drive - this.arousal) * Math.min(1, dt * aRate)
     this.arousal = Math.max(0, Math.min(1, this.arousal))
 
     this.valence += (0 - this.valence) * Math.min(1, dt * 0.5)
