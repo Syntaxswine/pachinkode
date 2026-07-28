@@ -234,6 +234,86 @@ its path up the rail. That is a more interesting model and the physics already s
 
 ---
 
+## Builder 2, second movement — the pull, the party, and the review · 2026-07-28
+
+The operator asked for three things: faster fire, a pull-back-release control, and a hostile
+review for engagement. All three shipped, and each one taught something.
+
+### The pull
+
+Hold draws the hammer from BASE toward full over 1.1 s; release fires; a tap is a BASE shot,
+which is what makes drumming aimable. BASE is a draggable handle on the cutaway's scale. Fire
+rate became a setting — REGULATION 100/min (the law, and still the class default every bare
+`Machine` gets), ARCADE 300/min (shipped default), STORM 600/min. The rate ceiling logic, the
+one-deep release buffer, and the first-release-wins rule are all pinned by tests.
+
+### The channel jam — kept on the operator's authority
+
+At fast cadence and low power, consecutive balls collide in the launch channel; sustained
+maximum-rate mashing mills 83% of balls back as fouls, while any tap rhythm with ≥0.3 s gaps
+stays at 1–3%. We verified the real machines carry return-ball prevention parts (patents
+JP2003033484A, JP2978440B2) — and then the operator reported the ground truth from a 1970s
+machine they owned, which had none: the clog was cumulative, every insufficient ball raining
+back into the plunger area. Ruling: **the jam is a mechanic.** It clears in seconds, channel
+casualties are refunded as fouls, the HUD names it live, and the route split greys itself while
+it holds (the solo table is outside its measured domain there).
+
+### The small win
+
+The operator asked why the bucket felt like it did nothing — and the honest answer was that its
+3-ball pay was invisible and its lottery unexplained. Fixes: payout popups at every pocket, the
+board's own token counter counting up, the lottery odds printed on the display, ハズレ/小当たり
+verdict labels, and **koatari** — a real machine feature, tuned by measurement: the realistic
+1.6 s blink caught 0.00–0.25 entries at the recommended base (a prize that paid nothing), so it
+became one 7 s opening capped at 4 entries, long enough to *react* with the migi switch. The
+small win now teaches the skill the jackpot needs, on a stake small enough to lose.
+
+### What the hostile review caught (24 agents, 18 findings, 12 confirmed)
+
+The two most instructive, both the same species:
+
+- **The impact rain could not scale.** A 6 ms dedupe gate compared against ctx.currentTime,
+  which is frozen across a synchronous event batch — so the 7-voice budget was unreachable dead
+  code and the board sounded no busier with thirty balls than three. Worse, WHICH strike
+  survived was event order, not loudness. Now: voices spread across the frame, spent
+  loudest-first, plus a rain bed whose gain follows the counted strike rate.
+- **The topbar's FOUL readout was a closed-form estimate** printing FOUL below power ≈0.135,
+  where measurement says ~99% of solo shots enter play. Replaced by measured `FOUL_ODDS`
+  (`--foulcurve`). That is the same failure as the 50:50 tick a session earlier: *an estimate,
+  stated with the confidence of a measurement, survives until an audit runs.* Twice now.
+
+Also fixed from the review: two-finger play halved the fire rate (shared booleans → per-pointer
+roles; extra fingers are drum hits via `machine.tap()`); pointercancel/blur/right-click could
+fire or wedge the charge (cancel ≠ release, everywhere); the whole cabinet strip was slider
+hit-area (a tap on the readiness lamp slammed BASE to 0 — into the jam regime); a mid-play
+refresh restored `screen:'play'` over a null machine (save whitelist now); an empty-handed
+release zeroed the lockout; a tap could silently overwrite a buffered charged shot; the
+stuck-refund's radial bound sat 0.7 mm on the wrong side of the inner wall; kakuhen was audibly
+identical to a dead chain (it now slams the gate, states a chord whose length is the real
+continuation probability, and restarts the Shepard descent *thinned* — the thing an old comment
+promised and the code never did).
+
+### Left undone, deliberately or honestly
+
+- The aim-spin idea from the first movement still stands (`makeBall` takes an angular velocity
+  nobody sets).
+- Tulip's timbre is still a plain triangle; the review rated a struck-metal rebuild "could".
+- Popup coalescing at STORM (many +N popups can stack) is unbuilt.
+- `dop.push()` is handed raw rewards, not prediction errors, so the phasic channel never shows
+  the reduced response to a fully-predicted reward — the actual Schultz result. The honest fix
+  is to push `reward − V(s)` using the value map's own estimate. Flagged by the review's
+  verifier as a bigger honesty item than the finding it rode in on. It changes presentation
+  only through the palette, but it changes it everywhere — measure before and after.
+- The koatari yield at a *reacting* player's dial is folded into `hesoValue()` as a tuned model
+  input (~2.5 entries); worth measuring properly with a reaction-delay model.
+
+Economy re-measured after koatari at 8 × 24 000: all specs inside their type-test bands (see
+README for the figures). 44 tests; board audit clean both ways.
+
+— *Builder 2 · Claude Fable 5 · 2026-07-28, later the same day*
+
+---
+
 ### One more thing, and it is the most useful thing here
 
 **Audit your own documentation adversarially, and do it before you believe yourself.**

@@ -319,6 +319,48 @@ aiming at one gap (ぶっこみ狙い) is a recognised skill, which argues real 
 *direction* is defensible; the magnitudes are a game-design choice. Marked DESIGN, and it should
 stay marked.
 
+### The pull, the fire rates, and the channel jam
+
+**The pull-back-release control is DESIGN** (a real machine's handle is a held rotation, not a
+pull), with one honest anchor: `CHARGE_TIME = 1.1 s` and the base-slider scheme exist so that a
+quick tap is a repeatable aimed shot — which is what the real skill of ぶっこみ狙い consists of.
+
+**The fire rates.** REGULATION (100/min) is the legal ceiling and the class default — every bare
+`Machine`, every tool, every test runs at it. ARCADE (300/min) and STORM (600/min) are the
+simulator taking the glass off, opted into by the shell, labeled in the options with the real
+rule. Tempo changes; odds, payouts and the ¥4 rental price do not.
+
+**The channel jam is MEASURED, and kept.** At fast cadence and low power, consecutive balls
+interact in the launch channel — measured 347 in-channel ball–ball impacts per 200 balls at dial
+0.06 / 0.2 s cadence, versus 45 at regulation. Sustained maximum-rate fire at dial 0.20 mills
+83% of balls back as fouls; any tap rhythm with ≥ 0.3 s gaps stays at 1–3%; the board is empty
+within seconds of easing off. Real machines carry return-ball prevention parts (patents
+JP2003033484A, JP2978440B2) that reduce but do not eliminate this; the operator's own 1970s
+machine, which predated them, jammed *cumulatively* — every insufficient ball fell back into the
+plunger area. The jam stays as a mechanic on that authority. Balls reaped stationary inside the
+channel are refunded as fouls, because they never entered play.
+
+**Consequence for the route odds:** `ROUTE_ODDS` are solo-shot measurements. They hold under
+rapid fire for dials ≥ ~0.15; below that, under sustained fire, the split is collision-dominated
+and no table can honestly describe it — the HUD names the regime instead of quoting numbers
+through it.
+
+**The foul readout is measured too.** `FOUL_ODDS` (solo cadence, `--foulcurve`) replaced a
+closed-form crest inversion that printed FOUL below power ≈ 0.135 — where measurement says ~99%
+of solo shots enter play. The real cliff: 99% at dial 0.00, 53% at 0.03, ~1% by 0.06. Same
+failure class as the old 50:50 tick, caught by the same kind of audit.
+
+### The small win — mechanism VERIFIED, numbers DESIGN
+
+小当たり (koatari) — small-bonus outcomes where the attacker opens briefly — are a real feature
+of modern machines. The odds used here (1/28 amadeji, 1/45 standard, 1/15 loose) and the window
+(one 7 s opening, 4-entry cap) are DESIGN: the first build used a realistic 1.6 s blink and
+measurement showed it caught 0.00–0.25 entries at the recommended base — a prize that paid
+nothing. Seven seconds is long enough to *react* with the migi-uchi switch, so the small win
+teaches the skill the jackpot requires, on a stake small enough to lose. It remains skill-gated:
+the measured yield at a left-route base is still ~0. Economy re-measured with `tools/calibrate.js`
+after the change; all three specs remain inside their type-test bands.
+
 ---
 
 ## 5. The Shepard tone

@@ -1,24 +1,47 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Machine, LAUNCH_INTERVAL, JITTER_COLD, JITTER_HOT } from '../src/sim/machine.js'
+import {
+  Machine, LAUNCH_INTERVAL, CHARGE_TIME, FIRE_RATES, JITTER_COLD, JITTER_HOT
+} from '../src/sim/machine.js'
 import { routeOdds, coinFlipDial } from '../src/sim/board.js'
 import { DT } from '../src/sim/world.js'
 
 /**
- * The launcher has two promises to keep, and they pull against each other.
+ * The launcher has three promises to keep, and they pull against each other.
  *
- * 1. It may never exceed the regulated rate. 100 balls per minute is a legal
- *    ceiling, not a balance figure, and a tap-to-fire control makes it very easy
- *    to break by accident — banking idle time and then emptying a burst.
+ * 1. At its class default it may never exceed the regulated rate. 100 balls per
+ *    minute is a legal ceiling, not a balance figure, and a tap-to-fire control
+ *    makes it very easy to break by accident — banking idle time and then
+ *    emptying a burst. The faster FIRE_RATES are opted into, never assumed, and
+ *    each must honor its own interval with the same rounding-up discipline.
  * 2. Firing fast must cost accuracy, and firing from rest must not.
+ * 3. The pull must be trustworthy: a tap is a shot at BASE, a held pull ramps
+ *    monotonically to full, and a release is never swallowed — it fires the
+ *    moment the lockout allows, at the power the pull reached.
  */
 
-/** Run the machine for `seconds`, holding the trigger as instructed each step. */
+/** Run the machine for `seconds`, holding the AUTOFIRE trigger as instructed. */
 function run (m, seconds, holdFn) {
   const steps = Math.round(seconds / DT)
   const launches = []
   for (let i = 0; i < steps; i++) {
     m.firing = holdFn(i * DT)
+    m.step(DT)
+    for (const ev of m.drain()) if (ev.type === 'launch') launches.push({ t: i * DT, ...ev })
+  }
+  return launches
+}
+
+/** Run the machine driving the PULL: pressFn says whether the trigger is down. */
+function runPull (m, seconds, pressFn) {
+  const steps = Math.round(seconds / DT)
+  const launches = []
+  let held = false
+  for (let i = 0; i < steps; i++) {
+    const want = pressFn(i * DT)
+    if (want && !held) m.beginCharge()
+    if (!want && held) m.releaseCharge()
+    held = want
     m.step(DT)
     for (const ev of m.drain()) if (ev.type === 'launch') launches.push({ t: i * DT, ...ev })
   }
@@ -164,6 +187,92 @@ test('route odds rise monotonically with the dial', () => {
     assert.ok(p >= prev - 1e-9, `route odds fell at dial ${d.toFixed(2)}`)
     prev = p
   }
+})
+
+test('a tap fires one ball at the base power', () => {
+  const m = new Machine({ seed: 11, tokens: 50 })
+  m.dial = 0.30
+  const shots = runPull(m, 4, (t) => t > 1 && t < 1.03)          // a 30 ms tap
+  assert.equal(shots.length, 1, `a tap produced ${shots.length} balls`)
+  assert.ok(Math.abs(shots[0].power - 0.30) < 0.05,
+    `tap fired at power ${shots[0].power.toFixed(3)}, expected ≈ base 0.30`)
+})
+
+test('a full pull fires at full power, whatever the base', () => {
+  const m = new Machine({ seed: 12, tokens: 50 })
+  m.dial = 0.10
+  const shots = runPull(m, 5, (t) => t > 1 && t < 1 + CHARGE_TIME + 0.4)
+  assert.equal(shots.length, 1)
+  assert.ok(shots[0].power > 0.98, `full pull fired at ${shots[0].power.toFixed(3)}`)
+})
+
+test('the pull ramps monotonically from base and stops exactly at 1', () => {
+  const m = new Machine({ seed: 13, tokens: 50 })
+  m.dial = 0.25
+  m.beginCharge()
+  let prev = m.power
+  for (let i = 0; i < Math.round(2.0 / DT); i++) {
+    m.step(DT)
+    assert.ok(m.power >= prev - 1e-12, `pull fell from ${prev} to ${m.power}`)
+    assert.ok(m.power <= 1 + 1e-12, `pull overshot: ${m.power}`)
+    prev = m.power
+  }
+  assert.ok(Math.abs(m.power - 1) < 1e-9, `held pull settled at ${m.power}, not 1`)
+})
+
+test('a release inside the lockout is not swallowed — it fires when allowed, at its own power', () => {
+  const m = new Machine({ seed: 14, tokens: 50 })
+  m.dial = 0.20
+  // Tap at t=1 (fires immediately, arms the lockout), then a 150 ms pull
+  // released well inside the 0.6 s lockout.
+  const shots = runPull(m, 4, (t) => (t > 1 && t < 1.03) || (t > 1.10 && t < 1.25))
+  assert.equal(shots.length, 2, `expected the buffered release to fire, got ${shots.length}`)
+  const gap = shots[1].t - shots[0].t
+  assert.ok(gap >= LAUNCH_INTERVAL - DT * 1.5,
+    `buffered shot broke the lockout: ${gap.toFixed(4)} s gap`)
+  // ~150 ms of pull over CHARGE_TIME from base 0.2: power ≈ 0.2 + 0.8·0.15/1.1.
+  const expect = 0.20 + 0.80 * (0.15 / CHARGE_TIME)
+  assert.ok(Math.abs(shots[1].power - expect) < 0.05,
+    `buffered shot fired at ${shots[1].power.toFixed(3)}, pull reached ≈ ${expect.toFixed(3)}`)
+})
+
+test('the release buffer is one shot deep', () => {
+  const m = new Machine({ seed: 15, tokens: 50 })
+  // One immediate shot, then TWO taps released inside the same lockout.
+  const shots = runPull(m, 4,
+    (t) => (t > 1 && t < 1.03) || (t > 1.10 && t < 1.16) || (t > 1.30 && t < 1.36))
+  assert.equal(shots.length, 2, `two releases in one lockout fired ${shots.length - 1} balls, not 1`)
+})
+
+test('every fire-rate setting honors its own interval and reaches its own rate', () => {
+  for (const [key, R] of Object.entries(FIRE_RATES)) {
+    const m = new Machine({ seed: 16, tokens: 4000, fireInterval: R.interval })
+    const shots = run(m, 30, () => true)
+    for (let i = 1; i < shots.length; i++) {
+      const gap = shots[i].t - shots[i - 1].t
+      assert.ok(gap >= R.interval - DT * 1.5,
+        `${key}: shots ${i - 1}→${i} were ${gap.toFixed(4)} s apart, under ${R.interval} s`)
+    }
+    assert.ok(shots.length > 0.9 * 30 / R.interval,
+      `${key}: expected ≈${Math.round(30 / R.interval)} shots in 30 s, got ${shots.length}`)
+  }
+})
+
+test('the class default is still the legal interval', () => {
+  // FIRE_RATES.arcade/storm are opted into by the shell. A Machine constructed
+  // bare — every tool, every test, every future harness — is regulation.
+  const m = new Machine({ seed: 17 })
+  assert.equal(m.fireInterval, LAUNCH_INTERVAL)
+})
+
+test('charged shots are deterministic', () => {
+  const play = () => {
+    const m = new Machine({ seed: 78, tokens: 600, fireInterval: FIRE_RATES.arcade.interval })
+    const shots = runPull(m, 20, (t) => (t % 1.7) < 0.4)   // repeating 400 ms pulls
+    return shots.map(s => `${s.power.toFixed(9)}@${s.speed.toFixed(9)}`).join(',') +
+      `|${m.tokens}|${m.spent}`
+  }
+  assert.equal(play(), play(), 'the pull mechanic is not deterministic')
 })
 
 test('rate-dependent scatter cannot change any outcome by itself', () => {

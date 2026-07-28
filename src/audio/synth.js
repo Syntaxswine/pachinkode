@@ -54,7 +54,8 @@ export class Synth {
     this.vol = { master: 0.7, impacts: 0.55, rewards: 0.8, bed: 0.35 }
     this.muted = false
     this._budget = 0
-    this._lastImpact = 0
+    this._slot = 0
+    this._frameT0 = 0
   }
 
   /** Must be called from a user gesture; browsers will not start audio otherwise. */
@@ -94,6 +95,7 @@ export class Synth {
     this.noise = buf
 
     this.buildBed()
+    this.buildRain()
     this.ready = true
   }
 
@@ -135,6 +137,40 @@ export class Synth {
     this.bedA.start(); this.bedB.start(); this.bedC.start()
   }
 
+  /**
+   * The brass rain, beyond the budget.
+   *
+   * Seven discrete voices cannot be three hundred strikes a second, however
+   * honestly they are picked. This layer is a continuous noise bed through two
+   * brass-register bandpasses whose gain follows the MEASURED impact rate —
+   * counted events per second, handed in by the shell — so ten times the balls
+   * genuinely sounds like ten times the rain, at constant cost. It is a
+   * measurement made audible, not a mood.
+   */
+  buildRain () {
+    const ctx = this.ctx
+    const src = ctx.createBufferSource()
+    src.buffer = this.noise
+    src.loop = true
+    this.rainGain = ctx.createGain()
+    this.rainGain.gain.value = 0
+    for (const [f, q] of [[2200, 1.5], [3600, 2]]) {
+      const bp = ctx.createBiquadFilter()
+      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q
+      src.connect(bp).connect(this.rainGain)
+    }
+    this.rainGain.connect(this.busImpacts)
+    src.start()
+  }
+
+  /** `rate` is impacts per second, measured by counting, not estimated. */
+  updateRain (rate, varnish) {
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const g = Math.min(0.11, 0.05 * Math.pow(Math.max(0, rate) / 90, 1.5)) * (0.45 + 0.55 * v)
+    this.rainGain.gain.setTargetAtTime(g, this.ctx.currentTime, 0.12)
+  }
+
   /** Called every frame. `varnish` scales the whole expressive layer. */
   updateBed (uncertainty, arousal, varnish) {
     if (!this.ready) return
@@ -150,19 +186,32 @@ export class Synth {
 
   // ── impacts ──────────────────────────────────────────────────────────────
 
-  /** Reset the per-frame voice budget. A busy board can produce 100 strikes/s. */
-  frame () { this._budget = 7 }
+  /** Reset the per-frame voice budget. A busy board can produce 300 strikes/s. */
+  frame () {
+    this._budget = 7
+    this._slot = 0
+    this._frameT0 = this.ready ? this.ctx.currentTime : 0
+  }
 
   /**
    * Steel on brass. A short inharmonic ping plus a noise transient, pitched and
    * brightened by impact speed. Real pachinko's signature sound is a *rain* of
    * these, so the budget matters more than any individual voice.
+   *
+   * Admitted voices are SPREAD across the frame at 2.4 ms intervals. An earlier
+   * 6 ms wall-clock dedupe compared against ctx.currentTime, which is quantized
+   * to the render quantum and frozen across one synchronous event batch — so
+   * after the first impact of a frame, every other one read the same clock and
+   * was dropped. The budget of 7 was unreachable; the real ceiling was one
+   * voice per frame, and the board sounded no busier with thirty balls than
+   * with three. (Found by the hostile review, reproduced at 183 strikes/s →
+   * 50 admitted.) The caller sorts the frame's hits loudest-first, so the
+   * budget now spends itself on the strikes that matter.
    */
   impact (speed, surface = 'nail', varnish = 1) {
     if (!this.ready || this._budget <= 0) return
-    const now = this.ctx.currentTime
-    if (now - this._lastImpact < 0.006) return
-    this._lastImpact = now
+    const now = Math.max(this.ctx.currentTime, this._frameT0 + this._slot * 0.0024)
+    this._slot++
     this._budget--
 
     const ctx = this.ctx
@@ -340,7 +389,7 @@ export class Synth {
    * At varnish 0 the illusion is dismantled: a single partial descends once and
    * ARRIVES. You get to hear what the trick was doing.
    */
-  shepard (duration = 8, varnish = 1, depth = 0) {
+  shepard (duration = 8, varnish = 1, depth = 0, amp = 1) {
     if (!this.ready) return
     const ctx = this.ctx
     const t0 = ctx.currentTime
@@ -356,7 +405,7 @@ export class Synth {
       o.frequency.setValueAtTime(F_TOP / 2, t0)
       o.frequency.exponentialRampToValueAtTime(F_TOP / 2 / Math.pow(2, SPAN), t0 + 3.0)
       g.gain.setValueAtTime(0.0001, t0)
-      g.gain.exponentialRampToValueAtTime(0.10, t0 + 0.15)
+      g.gain.exponentialRampToValueAtTime(0.10 * amp, t0 + 0.15)
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.1)
       o.connect(g).connect(this.busRewards)
       o.start(t0); o.stop(t0 + 3.2)
@@ -386,7 +435,9 @@ export class Synth {
         // because the envelope is zero at both ends, which is the whole trick.
         const p = ((t / cycle) + i / voices) % 1
         freq[k] = F_TOP * Math.pow(2, -SPAN * p)
-        gain[k] = 0.5 * (1 - Math.cos(2 * Math.PI * p)) * 0.075 * v
+        // `amp` thins the ensemble without changing its geometry — the fall
+        // continues through kakuhen at a fraction of its jackpot weight.
+        gain[k] = 0.5 * (1 - Math.cos(2 * Math.PI * p)) * 0.075 * v * amp
       }
       // Fade the whole ensemble in and out so it does not click on or off.
       const fade = Math.min(0.6 * RATE, n / 4) | 0
@@ -423,6 +474,129 @@ export class Synth {
   /** End the glissando — the fall finally stops, because the jackpot did. */
   shepardStop () {
     if (this._shep) { this._shep.stop(); this._shep = null }
+  }
+
+  /**
+   * Kakuhen: the chain lives. A win-paired chord — the jackpot's just-intonation
+   * stack at half weight — whose duration is proportional to the REAL
+   * continuation probability (catchP from the spec's own arithmetic), which is
+   * the one dial Dixon's data actually supports: bigger win, longer song.
+   */
+  kakuhen (catchP = 0.65, varnish = 1) {
+    const v = clamp(varnish)
+    const dur = 1.5 + 3 * clamp(catchP)
+    if (v < 0.5) {
+      // Unvarnished: the fact, stated once.
+      this.tone(262, 0.4, 0.12, 'sine')
+      return dur
+    }
+    const root = 220
+    const ratios = [1, 5 / 4, 3 / 2, 2, 5 / 2, 3]
+    ratios.forEach((r, i) => {
+      this.tone(root * r, dur * (0.5 + 0.5 * (1 - i / ratios.length)) * 0.9, 0.055 * v, 'triangle', null, i * 0.06)
+    })
+    return dur
+  }
+
+  /**
+   * Koatari — the small win. Two bright notes and done: win-paired and SHORT,
+   * because the prize is small and the duration is the honest part.
+   */
+  koatari (varnish = 1) {
+    const v = clamp(varnish)
+    if (v > 0.5) {
+      this.tone(660, 0.16, 0.16 * v, 'triangle')
+      this.tone(990, 0.30, 0.12 * v, 'triangle', null, 0.09)
+    } else {
+      this.tone(247, 0.22, 0.11, 'sine')
+    }
+  }
+
+  /**
+   * A foul: the dead sound of a ball falling back onto balls. Deliberately
+   * duller than any nail ping — the ear learns foul = thud, play = ring.
+   * Mechanism sound; it fires whether or not anything else follows.
+   */
+  foul (varnish = 1) {
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const o = ctx.createOscillator()
+    o.type = 'triangle'
+    o.frequency.setValueAtTime(150, t)
+    o.frequency.exponentialRampToValueAtTime(118, t + 0.06)
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.085 * (0.55 + 0.45 * v), t)
+    g.gain.exponentialRampToValueAtTime(0.0006, t + 0.065)
+    o.connect(g).connect(this.busImpacts)
+    o.start(t); o.stop(t + 0.08)
+    const nz = ctx.createBufferSource()
+    nz.buffer = this.noise
+    nz.playbackRate.value = 0.7
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'; lp.frequency.value = 600
+    const ng = ctx.createGain()
+    ng.gain.setValueAtTime(0.05, t)
+    ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.025)
+    nz.connect(lp).connect(ng).connect(this.busImpacts)
+    nz.start(t); nz.stop(t + 0.04)
+  }
+
+  /**
+   * The sustained jam: a dry column-rattle while foulHeat sits above the same
+   * threshold the HUD names it at. Reads a measured accumulator of real foul
+   * events; ticks stop the moment the channel clears.
+   */
+  updateJam (foulHeat, varnish) {
+    if (!this.ready || foulHeat <= 1.6) return
+    const t = this.ctx.currentTime
+    if (t < (this._jamNext || 0)) return
+    this._jamNext = t + 0.22 + Math.random() * 0.10
+    const v = clamp(varnish)
+    const nz = this.ctx.createBufferSource()
+    nz.buffer = this.noise
+    nz.playbackRate.value = 0.9
+    const bp = this.ctx.createBiquadFilter()
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 3
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(0.04 * Math.min(1, foulHeat / 3) * (0.5 + 0.5 * v), t)
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.05)
+    nz.connect(bp).connect(g).connect(this.busImpacts)
+    nz.start(t); nz.stop(t + 0.07)
+  }
+
+  /**
+   * The attacker's gate: a mechanical thunk opening, a slam plus rattle shutting.
+   * Mechanism, not reward — it makes the party's structure audible with eyes
+   * closed, which a bare stop-fade never did.
+   */
+  gate (open, varnish = 1) {
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const o = ctx.createOscillator()
+    o.type = 'sine'
+    o.frequency.setValueAtTime(open ? 120 : 95, t)
+    o.frequency.exponentialRampToValueAtTime(open ? 70 : 50, t + 0.08)
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.11 * (0.5 + 0.5 * v), t)
+    g.gain.exponentialRampToValueAtTime(0.0006, t + 0.11)
+    o.connect(g).connect(this.busImpacts)
+    o.start(t); o.stop(t + 0.13)
+    if (!open) {
+      const nz = ctx.createBufferSource()
+      nz.buffer = this.noise
+      nz.playbackRate.value = 0.8
+      const lp = ctx.createBiquadFilter()
+      lp.type = 'lowpass'; lp.frequency.value = 900
+      const ng = ctx.createGain()
+      ng.gain.setValueAtTime(0.06 * (0.5 + 0.5 * v), t)
+      ng.gain.exponentialRampToValueAtTime(0.0005, t + 0.05)
+      nz.connect(lp).connect(ng).connect(this.busImpacts)
+      nz.start(t); nz.stop(t + 0.07)
+    }
   }
 
   /** Balls hitting the tray. The metal roar of being paid. */
@@ -488,6 +662,21 @@ export class Synth {
     ng.gain.exponentialRampToValueAtTime(0.0004, t + 0.030 + 0.02 * w)
     nz.connect(bp).connect(ng).connect(this.busImpacts)
     nz.start(t); nz.stop(t + 0.06)
+  }
+
+  /**
+   * The pull ratchet: one dry click per detent as the hammer is drawn back.
+   *
+   * Mechanism sound, not a reward cue. The pitch tracks the spring's
+   * compression because a shorter, tighter spring rings higher — that is
+   * physics. It is not the ascending-anticipation contour this project cut:
+   * it is tied to the player's own hand, runs whether or not any reward
+   * follows, and stops the instant they stop pulling.
+   */
+  ratchet (power = 0, varnish = 1) {
+    if (!this.ready) return
+    const v = clamp(varnish)
+    this.tone(850 + 950 * clamp(power), 0.018, 0.034 * (0.5 + 0.5 * v), 'square', this.busImpacts)
   }
 
   /** UI. */

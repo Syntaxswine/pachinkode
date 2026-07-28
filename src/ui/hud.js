@@ -35,8 +35,10 @@ export class Hud {
 
       <div class="sect">
         <div class="k">THE LAUNCHER</div>
-        <div class="stat"><span>dial</span><span id="hDial">—</span></div>
+        <div class="stat"><span>base</span><span id="hDial">—</span></div>
+        <div class="stat"><span>pull</span><span id="hPull">—</span></div>
         <div class="stat"><span>route</span><span id="hRoute">—</span></div>
+        <div class="stat"><span>rate cap</span><span id="hRate">—</span></div>
         <div class="stat"><span>scatter</span><span id="hScat">—</span></div>
         <div class="meter uni"><i id="mScat" style="width:0%"></i></div>
         <div class="stat"><span>shots</span><span id="hShots">0</span></div>
@@ -45,10 +47,12 @@ export class Hud {
 
       <div class="sect">
         <div class="k">THE LOTTERY</div>
-        <div class="stat"><span>odds</span><span id="hOdds">—</span></div>
+        <div class="stat"><span>big 大当たり</span><span id="hOdds">—</span></div>
+        <div class="stat"><span>small 小当たり</span><span id="hKoOdds">—</span></div>
         <div class="stat"><span>spins</span><span id="hSpins">0</span></div>
         <div class="stat"><span>held 保留</span><span id="hHolds">0/4</span></div>
         <div class="stat"><span>jackpots</span><span id="hJack">0</span></div>
+        <div class="stat"><span>small wins</span><span id="hKo">0</span></div>
         <div class="tiny" id="hLottery"></div>
       </div>
 
@@ -79,8 +83,8 @@ export class Hud {
           Press <b>V</b> to toggle.</div>
       </div>`
     for (const id of ['hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
-      'hDial', 'hRoute', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
-      'hOdds', 'hSpins', 'hHolds', 'hJack', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
+      'hDial', 'hPull', 'hRoute', 'hRate', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
+      'hOdds', 'hKoOdds', 'hSpins', 'hHolds', 'hJack', 'hKo', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
       'hVal', 'mVal', 'hMot', 'mMot', 'hDiss', 'hCeleb', 'hDeserved', 'hLdw', 'hVarn']) {
       this[id] = this.el.querySelector('#' + id)
     }
@@ -105,32 +109,52 @@ export class Hud {
     // which is a function of how hard the mechanism has been worked — so this
     // needle is the price of firing fast, shown before you pay it.
     this.hDial.textContent = m.dial.toFixed(2)
-    // Route odds, measured rather than derived. The split between left-hitting
-    // and right-hitting is probabilistic — a ball's surviving energy at the top
-    // of the rail varies chaotically with how it rattled on the way up — so a
-    // LEFT/RIGHT label would be claiming a certainty the machine does not have.
-    const pRight = routeOdds(m.dial)
+    const pulled = m.power - m.dial > 0.005
+    this.hPull.textContent = pulled ? Math.round(m.power * 100) + '%' : 'at base'
+    this.hPull.style.color = pulled ? 'var(--hot)' : 'var(--dim)'
+    this.hRate.textContent = `${Math.round(60 / m.fireInterval)}/min` +
+      (m.fireInterval >= 0.6 ? ' · legal' : '')
+    // Route odds, measured rather than derived, and read from the LIVE pull so
+    // drawing the hammer back sweeps them in real time. The split between
+    // left-hitting and right-hitting is probabilistic — a ball's surviving
+    // energy at the top of the rail varies chaotically with how it rattled on
+    // the way up — so a LEFT/RIGHT label would be claiming a certainty the
+    // machine does not have.
+    const pRight = routeOdds(m.power)
     const near = Math.abs(pRight - 0.5) < 0.12
-    this.hRoute.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右`
-    this.hRoute.style.color = near ? 'var(--hot)' : 'var(--ink)'
+    // During a channel jam the solo-shot table is outside its measured domain
+    // — the split is collision-dominated and genuinely unknowable — so the
+    // figure greys and says what it is rather than asserting through it.
+    const jammed = m.foulHeat > 1.6
+    this.hRoute.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右` +
+      (jammed ? ' · solo' : '')
+    this.hRoute.style.color = jammed ? 'var(--faint)' : near ? 'var(--hot)' : 'var(--ink)'
     const jn = Math.min(1, Math.max(0, (m.nextJitter - 0.0035) / (0.026 - 0.0035)))
     this.hScat.textContent = '±' + (m.nextJitter * 100).toFixed(2) + '%'
     this.mScat.style.width = (jn * 100).toFixed(0) + '%'
     this.mScat.style.background = jn > 0.55 ? '#d4574a' : 'var(--hot)'
     this.hShots.textContent = m.shots
-    this.hLaunchNote.textContent = jn > 0.6
-      ? 'Firing flat out. The hammer and the cradle never settle, and the shot spreads.'
-      : jn < 0.2
-        ? 'Rested. Single shots hold the dial almost exactly.'
-        : ''
+    // The jam outranks everything: it is the one launcher state that actively
+    // eats the player's stream, and it has a remedy worth stating.
+    const jam = m.foulHeat > 1.6
+    this.hLaunchNote.textContent = jam
+      ? 'CHANNEL JAM — fouled balls are falling back into the stream and robbing the climbers. Ease off; it clears in a second or two.'
+      : jn > 0.6
+        ? 'Firing flat out. The hammer and the cradle never settle, and the shot spreads.'
+        : jn < 0.2
+          ? 'Rested. Single shots hold the dial almost exactly.'
+          : ''
+    this.hLaunchNote.style.color = jam ? 'var(--hot)' : ''
 
     this.hOdds.textContent = '1 / ' + (m.kakuhen > 0 ? m.S.kakuhenOdds : m.S.jackpotOdds)
+    this.hKoOdds.textContent = '1 / ' + m.S.koatariOdds
     this.hSpins.textContent = m.spins
     this.hHolds.textContent = `${m.holds}/4`
     this.hJack.textContent = m.jackpots
+    this.hKo.textContent = m.koataris
     this.hLottery.textContent = m.kakuhen > 0
       ? `確変 KAKUHEN — ${m.kakuhen} spins left at raised odds`
-      : 'The start pocket pays 3 and buys one ticket. It does not decide anything.'
+      : 'The start pocket pays 3 and buys one ticket. Small win: the attacker blinks open. Big win: it stays.'
 
     const da = Math.max(0, Math.min(1, (dop.da - 1) / 2.7))
     this.hDa.textContent = (dop.delta >= 0 ? '+' : '') + dop.delta.toFixed(2)

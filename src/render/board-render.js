@@ -7,9 +7,13 @@
 // The one image everything else serves: a ball's trail is coloured by V(s), the
 // machine's learned estimate of what a ball in that position is worth, and its
 // alpha by the machine's confidence in that estimate. When the ball lands, the
-// difference between the trail's colour and what it actually paid is exactly the
-// prediction error, and that difference is what flashes. You are watching a
-// dopamine signal happen, in colour, on a board that taught itself the map.
+// gap between that estimate and what it actually paid is the prediction error —
+// which drives the frame hue (palette.js) and the HUD's δ needle. The pocket
+// flashes MARK those landings; their amplitude is authored per event class, not
+// measured. (An earlier version of this comment claimed the flash WAS the δ.
+// The audit disagreed, and the audit was right: the honest δ shrinks as the
+// machine learns, and a monotonically dimming celebration is the opposite of
+// what a flash is for. The measured signal lives in the hue and the needle.)
 
 import { framePalette, trailColour, hsl } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
@@ -23,7 +27,12 @@ export class Renderer {
     this.ctx = canvas.getContext('2d', { alpha: false })
     this.trails = new Map()
     this.flashes = []
+    this.popups = []           // floating payout numbers — the truth, dressed
     this.shake = 0
+    this.lampPulse = 0         // heso burst on the frame lamps
+    this._t = 0
+    this._shownTokens = null   // the counter's displayed value, easing to truth
+    this._tokGlow = 0
     this.dpr = Math.min(2, globalThis.devicePixelRatio || 1)
   }
 
@@ -49,6 +58,17 @@ export class Renderer {
 
   flash (x, y, delta) { this.flashes.push({ x, y, d: delta, t: 0 }) }
   kick (amount) { this.shake = Math.min(1, this.shake + amount) }
+
+  /**
+   * A payout number, floated at the pocket that paid it. The number itself is
+   * ledger truth and appears at every varnish; only the dressing (gold, rise,
+   * pop-in) obeys the switch. Numbers going up, visibly, where and when the
+   * scoring happened.
+   */
+  pop (x, y, text, weight = 1) { this.popups.push({ x, y, text, w: weight, t: 0 }) }
+
+  /** A burst on the frame lamps — the board noticing a score. `k` is weight. */
+  lampBurst (k = 1) { this.lampPulse = Math.max(this.lampPulse, Math.min(1, k)) }
 
   draw (machine, dop, varnish, dt) {
     const ctx = this.ctx
@@ -78,9 +98,12 @@ export class Renderer {
     this.pockets(ctx, P, machine, dop)
     this.trailsAndBalls(ctx, P, machine, dop, dt)
     this.flashLayer(ctx, P, dt)
+    this.lamps(ctx, P, machine, dop, dt)
+    this.popupLayer(ctx, P, dt)
     this.launcher(ctx, P, machine)
 
     ctx.restore()
+    this._t += dt
   }
 
   background (ctx, P, w, h, dop) {
@@ -212,6 +235,16 @@ export class Renderer {
     const fs = Math.max(12, h * 0.34)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+
+    // What this screen IS, printed on it: a lottery, at these odds. The ball
+    // in the start pocket bought the ticket; this is the readout. Nobody
+    // should have to guess that — a player did, and said so.
+    ctx.font = `500 ${Math.max(7, h * 0.085)}px ui-monospace, monospace`
+    ctx.fillStyle = m.kakuhen > 0
+      ? hsl(P.hue - 150, P.saturation * 1.2, 0.55)
+      : hsl(P.hue, P.saturation * 0.35, 0.40)
+    ctx.fillText(`抽選 LOTTERY 1/${m.odds}`, x0 + w / 2, y0 + h * 0.13)
+
     ctx.font = `500 ${fs}px ui-monospace, Menlo, Consolas, monospace`
 
     // Reel stop schedule, as a fraction of the spin. The middle reel is last and
@@ -222,7 +255,9 @@ export class Renderer {
       let glyph, bright
       if (!m.spin) {
         glyph = m.lastSymbols ? m.lastSymbols[i] : '·'
-        bright = 0.20
+        // The matched triple stays LIT through the jackpot it won — the one
+        // moment the machine has something true to brag about.
+        bright = m.inJackpot ? 0.78 : 0.20
       } else {
         const k = m.spin.t / m.spin.dur
         const order = i === 0 ? 0 : i === 2 ? 1 : 2
@@ -244,7 +279,26 @@ export class Renderer {
       ctx.fillText(String(glyph), cx, cy)
     }
 
-    if (m.spin && m.spin.reach && m.spin.t / m.spin.dur > STOP[1]) {
+    // The verdict, stated. A losing spin used to simply stop — a player
+    // watching the reels could not tell a resolution from a stall.
+    const res = m.lastResolve
+    const resFresh = !m.spin && res && m.time - res.at < 1.4
+    if (m.inJackpot) {
+      // The running count, in the room's own currency, while the attacker
+      // swallows. This is the number the player is actually earning, live.
+      const j = m.jackpot
+      ctx.font = `600 ${Math.max(9, h * 0.13)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(44, P.saturation * 1.5, 0.60)
+      ctx.fillText(`R${j.round}/${m.S.rounds}  +${j.paid}`, x0 + w / 2, y0 + h * 0.83)
+    } else if (resFresh && res.kind === 'ko') {
+      ctx.font = `600 ${Math.max(9, h * 0.12)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(44, P.saturation * 1.4, 0.60)
+      ctx.fillText('小当たり  SMALL WIN', x0 + w / 2, y0 + h * 0.83)
+    } else if (resFresh && res.kind === 'lose') {
+      ctx.font = `500 ${Math.max(8, h * 0.10)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(P.hue, P.saturation * 0.3, 0.38)
+      ctx.fillText('ハズレ  MISS', x0 + w / 2, y0 + h * 0.83)
+    } else if (m.spin && m.spin.reach && m.spin.t / m.spin.dur > STOP[1]) {
       ctx.font = `500 ${Math.max(8, h * 0.11)}px ui-monospace, monospace`
       ctx.fillStyle = hsl(44, P.saturation * 1.4, 0.55)
       ctx.fillText('リーチ  REACH', x0 + w / 2, y0 + h * 0.83)
@@ -442,11 +496,16 @@ export class Renderer {
    * the same move the rest of the game makes — put the machine's interior on the
    * outside — and it makes the one control you actually have legible.
    *
-   * Everything drawn here is real state read off the Machine. The hammer's draw
-   * is `dial`, its strike is `hammer`, the readiness lamp is `readiness`, and the
-   * scatter arc is `nextJitter` — the actual standard deviation the next shot
-   * will be given. The threshold tick is `thresholdCrestSpeed()` solved back
-   * through the rail climb, so it marks the true boundary between the two routes.
+   * Everything drawn here is real state read off the Machine. The hammer sits at
+   * `power` — the live pull, which rests at the BASE slider and draws further
+   * back while the trigger is held — its strike is `hammer`, the readiness lamp
+   * is `readiness`, and the scatter arc is `nextJitter`, the actual standard
+   * deviation the next shot will be given. The odds bar is the route split of
+   * the shot currently being built, so pulling back visibly swings the odds.
+   *
+   * The travel scale doubles as the control itself: main.js maps pointer drags
+   * on the cabinet strip through `dialFromX`, so the drawing and the input are
+   * the same object and cannot disagree.
    */
   launcher (ctx, P, m) {
     const y0 = this.Y(BOARD.h) + this.S(0.008)
@@ -466,6 +525,8 @@ export class Renderer {
     const railL = x0 + w * 0.06
     const railR = x0 + w * 0.62
     const span = railR - railL
+    // Published for hit-testing: the scale IS the base-power slider.
+    this.dialRail = { x0: railL, x1: railR }
     ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.26)
     ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(railL, mid + this.S(0.011)); ctx.lineTo(railR, mid + this.S(0.011)); ctx.stroke()
@@ -478,6 +539,38 @@ export class Renderer {
       ctx.stroke()
     }
 
+    // The BASE thumb — the resting pull, where every quick tap fires from.
+    // Drawn as a HANDLE, not a tick, because it is one: grip lines, a body
+    // wide enough to see and to hit, and a pointer up to the scale. (A 3 px
+    // triangle read as a readout; nobody dragged it. Review finding.)
+    const baseX = railL + span * m.dial
+    const thW = Math.max(11, this.S(0.010))
+    const thH = Math.max(8, this.S(0.0068))
+    const thY = mid + this.S(0.0135)
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.5, 0.62)
+    ctx.beginPath()
+    ctx.moveTo(baseX, mid + this.S(0.010))
+    ctx.lineTo(baseX - this.S(0.0032), thY)
+    ctx.lineTo(baseX + this.S(0.0032), thY)
+    ctx.closePath()
+    ctx.fill()
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.35, 0.30)
+    ctx.fillRect(baseX - thW / 2, thY, thW, thH)
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.5, 0.60)
+    ctx.lineWidth = 1
+    ctx.strokeRect(baseX - thW / 2, thY, thW, thH)
+    for (let gi = -1; gi <= 1; gi++) {
+      ctx.beginPath()
+      ctx.moveTo(baseX + gi * thW * 0.22, thY + thH * 0.25)
+      ctx.lineTo(baseX + gi * thW * 0.22, thY + thH * 0.75)
+      ctx.stroke()
+    }
+    ctx.font = `500 ${Math.max(7, this.S(0.0068))}px ui-monospace, monospace`
+    ctx.fillStyle = P.inkDim
+    ctx.textAlign = 'center'
+    ctx.fillText('BASE', baseX, thY + thH + this.S(0.0075))
+    ctx.textAlign = 'left'
+
     // Where the two routes are closest to even odds — measured, not derived.
     const tDial = this.thresholdDial()
     if (tDial > 0 && tDial < 1) {
@@ -488,17 +581,23 @@ export class Renderer {
       ctx.font = `500 ${Math.max(7, this.S(0.0075))}px ui-monospace, monospace`
       ctx.fillStyle = hsl(44, P.saturation * 1.1, 0.52)
       ctx.textAlign = 'center'
-      ctx.fillText('50:50', tx, mid + this.S(0.030))
+      // Above the scale — the BASE thumb's label owns the space below, and the
+      // recommended base sits exactly on this tick.
+      ctx.fillText('50:50', tx, mid - this.S(0.021))
       ctx.textAlign = 'left'
     }
 
-    // The live route odds at the current dial, drawn as a split bar above the
-    // rail. The split is genuine — this is measured behaviour, not a model — and
-    // it is the honest replacement for a LEFT/RIGHT label that was pretending the
-    // boundary is sharp.
-    const pRight = routeOdds(m.dial)
+    // The live route odds OF THE SHOT BEING BUILT, drawn as a split bar above
+    // the rail. Reads `power`, not `dial` — so drawing the hammer back sweeps
+    // the odds rightward in real time, which is the whole point of showing them.
+    // The split is genuine measured behaviour, not a model.
+    const pRight = routeOdds(m.power)
+    // During a channel jam the solo table is outside its measured domain:
+    // the bar greys and says so rather than asserting through the traffic.
+    const jam = m.foulHeat > 1.6
     const obY = y0 + h * 0.20
     const obX = x0 + w * 0.22, obW = w * 0.34, obH = this.S(0.006)
+    if (jam) ctx.globalAlpha = 0.35
     ctx.fillStyle = hsl(212, P.saturation * 0.7, 0.42)
     ctx.fillRect(obX, obY - obH / 2, obW * (1 - pRight), obH)
     ctx.fillStyle = hsl(30, P.saturation * 0.9, 0.50)
@@ -508,11 +607,14 @@ export class Renderer {
     ctx.textAlign = 'right'
     ctx.fillText(`左 ${Math.round((1 - pRight) * 100)}`, obX - this.S(0.004), obY + this.S(0.003))
     ctx.textAlign = 'left'
-    ctx.fillText(`${Math.round(pRight * 100)} 右`, obX + obW + this.S(0.004), obY + this.S(0.003))
+    ctx.fillText(`${Math.round(pRight * 100)} 右${jam ? ' · solo' : ''}`, obX + obW + this.S(0.004), obY + this.S(0.003))
+    ctx.globalAlpha = 1
 
     // ── the hammer ──
-    // Drawn back in proportion to the dial, snapping forward on a shot.
-    const draw = m.dial
+    // Sits at the live pull: resting at BASE, drawing back while the trigger is
+    // held, holding its draw while a released shot waits out the lockout, and
+    // snapping forward on the strike.
+    const draw = m.power
     const strike = m.hammer * m.hammer
     const hy = mid
     const hw = this.S(0.011)
@@ -556,6 +658,24 @@ export class Renderer {
     ctx.moveTo(railL, mid + this.S(0.011))
     ctx.lineTo(hx, mid + this.S(0.011))
     ctx.stroke()
+
+    // The pull past base, made loud: a hot overdraw from the BASE thumb to the
+    // hammer, and a live percentage. Charging is the one moment the player is
+    // doing something continuous, so it gets continuous feedback.
+    const pulled = m.power - m.dial
+    if (pulled > 0.005) {
+      ctx.strokeStyle = hsl(30, P.saturation * (0.8 + 0.5 * m.power), 0.58)
+      ctx.lineWidth = Math.max(2, this.S(0.0030))
+      ctx.beginPath()
+      ctx.moveTo(baseX, mid + this.S(0.011))
+      ctx.lineTo(hx, mid + this.S(0.011))
+      ctx.stroke()
+      ctx.font = `500 ${Math.max(8, this.S(0.0085))}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(30, P.saturation * 1.1, 0.62)
+      ctx.textAlign = 'center'
+      ctx.fillText(`PULL ${Math.round(m.power * 100)}%`, hx, mid - this.S(0.018))
+      ctx.textAlign = 'left'
+    }
 
     // The ball in the cradle, waiting to be struck. Fades in as the mechanism
     // comes back off its lockout.
@@ -625,6 +745,49 @@ export class Renderer {
     ctx.fill()
     ctx.fillStyle = P.inkDim
     ctx.fillText('LAUNCHER', x0 + w * 0.055, y0 + h * 0.24)
+
+    // ── the token counter ──
+    // On the cabinet, where a real machine keeps its ball tray. The value shown
+    // eases toward the truth so a payout is a visible count-UP, and a fresh
+    // arrival glows. The number is never wrong for longer than a quarter
+    // second, and the ledger in the panel is exact at all times.
+    if (this._shownTokens === null) this._shownTokens = m.tokens
+    if (m.tokens > this._lastTokens) this._tokGlow = 1
+    this._lastTokens = m.tokens
+    const dtok = m.tokens - this._shownTokens
+    this._shownTokens += Math.abs(dtok) < 0.6 ? dtok : dtok * 0.16
+    this._tokGlow = Math.max(0, this._tokGlow - 0.035)
+    const glow = this._tokGlow * P.varnish
+    const cx1 = sx0 + sw
+    const cy1 = boxT + boxH + this.S(0.0115)
+    const numStr = String(Math.round(this._shownTokens))
+    ctx.font = `600 ${Math.max(10, this.S(0.0125 + 0.0018 * glow))}px ui-monospace, monospace`
+    const numW = ctx.measureText(numStr).width
+    ctx.fillStyle = glow > 0.02
+      ? hsl(44, P.saturation * (0.6 + 0.7 * glow), 0.50 + 0.28 * glow)
+      : hsl(P.hue, P.saturation * 0.25, 0.62)
+    ctx.textAlign = 'right'
+    ctx.fillText(numStr, cx1, cy1 + this.S(0.0005))
+    // Label placed off the MEASURED number width — at small canvas sizes the
+    // font floors kick in and a fixed offset collided with six digits.
+    ctx.font = `500 ${Math.max(7, this.S(0.0068))}px ui-monospace, monospace`
+    ctx.fillStyle = P.inkDim
+    ctx.fillText('TOKENS', cx1 - numW - Math.max(5, this.S(0.004)), cy1)
+    ctx.textAlign = 'left'
+  }
+
+  /** Is a canvas-CSS-pixel y inside the launcher cabinet strip? */
+  inCabinet (cssY) { return cssY > this.Y(BOARD.h) }
+
+  /**
+   * Map a pointer x on the cabinet strip to a base-power setting, using the
+   * same rail geometry the travel scale was drawn with. Returns 0..1, or null
+   * before the first frame has published the rail.
+   */
+  dialFromX (cssX) {
+    const r = this.dialRail
+    if (!r) return null
+    return Math.max(0, Math.min(1, (cssX - r.x0) / (r.x1 - r.x0)))
   }
 
   /**
@@ -636,6 +799,96 @@ export class Renderer {
    * tick was drawn in the wrong third of the dial until the measurement was run.
    */
   thresholdDial () { return coinFlipDial() }
+
+  /**
+   * The frame lamps — the parlour's electric weather, on the board's border
+   * where a real cabinet carries its 電飾. Twenty lamps: twelve across the top,
+   * four down each upper edge. Everything they do is read off real state:
+   * breathing follows arousal, the chase is `inJackpot`, the slow alternation
+   * is kakuhen, the convergence is a live reach, and the triple-pulse is a
+   * heso burst. At varnish 0 they go dark — they are pure celebration, and
+   * losing the light show is exactly what the switch is for.
+   */
+  lamps (ctx, P, m, dop, dt) {
+    this.lampPulse = Math.max(0, this.lampPulse - dt / 0.9)
+    const v = P.varnish
+    if (v <= 0.01) return
+    const t = this._t
+
+    // Positions, built once: top row then upper sides.
+    if (!this._lampPos) {
+      const pos = []
+      for (let i = 0; i < 12; i++) pos.push({ x: 0.045 + (0.350 / 11) * i, y: 0.011 })
+      for (let i = 0; i < 4; i++) pos.push({ x: 0.010, y: 0.055 + 0.045 * i })
+      for (let i = 0; i < 4; i++) pos.push({ x: 0.430, y: 0.055 + 0.045 * i })
+      this._lampPos = pos
+    }
+    const pos = this._lampPos
+    const N = pos.length
+    const reach = m.spin && m.spin.reach && m.spin.t / m.spin.dur > 0.58
+
+    for (let i = 0; i < N; i++) {
+      // Base breathing, phase-staggered so the frame shimmers rather than blinks.
+      let b = (0.05 + 0.30 * dop.arousal) * (0.7 + 0.3 * Math.sin(t * 2.1 + i * 1.7))
+      if (m.inJackpot) {
+        // The chase: every third lamp lit, marching.
+        b = ((i + Math.floor(t * 14)) % 3 === 0) ? 1 : 0.10
+      } else if (m.kakuhen > 0) {
+        // Kakuhen: halves alternating, unhurried — the machine holding its breath.
+        b = ((i % 2) === (Math.floor(t * 2) % 2)) ? 0.65 : 0.08
+      } else if (reach) {
+        // Reach: light converging on the middle of the top row, with the crawl.
+        // The sides sit it out — the drama is over the display.
+        if (i < 12) {
+          const c = Math.abs(i - 5.5) / 5.5
+          b = 1 - c * Math.min(1, 2 - 2 * (m.spin.t / m.spin.dur))
+        } else b = 0.06
+      }
+      // A score burst rides on top of everything — except a reach's darkened
+      // sides, which it would otherwise perpetually re-light at fast tempo.
+      if (this.lampPulse > 0 && !(reach && i >= 12)) {
+        b = Math.max(b, this.lampPulse * (0.45 + 0.55 * Math.sin(this.lampPulse * 21)))
+      }
+      const lit = Math.max(0, Math.min(1, b)) * v
+      if (lit < 0.03) continue
+      const x = this.X(pos[i].x), y = this.Y(pos[i].y)
+      const r = Math.max(1.6, this.S(0.0042))
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r * (1.6 + 1.4 * lit))
+      g.addColorStop(0, hsl(44, P.saturation * 1.25, 0.45 + 0.30 * lit, 0.9 * lit))
+      g.addColorStop(1, 'transparent')
+      ctx.fillStyle = g
+      ctx.beginPath(); ctx.arc(x, y, r * (1.6 + 1.4 * lit), 0, TAU); ctx.fill()
+      ctx.fillStyle = hsl(44, P.saturation * 1.1, 0.30 + 0.45 * lit)
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill()
+    }
+  }
+
+  /** Floating payout numbers: truth at every varnish, dressing only above it. */
+  popupLayer (ctx, P, dt) {
+    const v = P.varnish
+    for (let i = this.popups.length - 1; i >= 0; i--) {
+      const p = this.popups[i]
+      p.t += dt
+      const life = 1.05
+      if (p.t > life) { this.popups.splice(i, 1); continue }
+      const k = p.t / life
+      const rise = this.S(0.014 + 0.022 * v) * k
+      const alpha = v > 0.5 ? (1 - k) * (1 - k * 0.4) : 1 - k
+      // A brief pop-in at high varnish; flat and small without it.
+      const scale = v > 0.5 ? (k < 0.12 ? 0.55 + 3.75 * k : 1) : 0.85
+      const fs = Math.max(9, this.S(0.0115 * p.w) * scale)
+      ctx.globalAlpha = Math.max(0, alpha)
+      ctx.font = `600 ${fs}px ui-monospace, Menlo, Consolas, monospace`
+      ctx.textAlign = 'center'
+      ctx.lineWidth = Math.max(2, fs * 0.22)
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+      ctx.strokeText(p.text, this.X(p.x), this.Y(p.y) - rise)
+      ctx.fillStyle = v > 0.5 ? hsl(44, P.saturation * 1.3, 0.68) : hsl(0, 0, 0.58)
+      ctx.fillText(p.text, this.X(p.x), this.Y(p.y) - rise)
+      ctx.globalAlpha = 1
+    }
+    ctx.textAlign = 'left'
+  }
 
   /** Prediction-error flashes: the visible δ. */
   flashLayer (ctx, P, dt) {

@@ -44,8 +44,9 @@ of 1985, appendix 4 — so these are not estimates:
   kakuhen probability swing at **10×**, and a jackpot at **1500 balls**. All regulation.
 - The economy is calibrated against the real type-test bands (1 h: 33–220%, 4 h: 40–150%,
   10 h: 50–133%) by `tools/calibrate.js`, which measures rather than asserts. The gentle machine
-  returns **83.9% ± 15.4%** over eight runs of 24 000 balls. That spread is not sloppiness — it
-  is why the regulation constrains variance and not just the mean.
+  returns **77.8% ± 12.2%** over eight runs of 24 000 balls (re-measured after the small win went
+  in; the workhorse spec sits at 64.5% ± 16.9%). That spread is not sloppiness — it is why the
+  regulation constrains variance and not just the mean.
 
 Nothing is scripted. There is no code path that nudges a ball toward a pocket. If it goes in, it
 went in.
@@ -98,34 +99,56 @@ Which means there is a dial position where you genuinely cannot know which way a
 and it sits almost exactly on the setting that best feeds the start pocket. **Maximum uncertainty
 and maximum value at the same place on the knob.**
 
-## One knob, and now you can see it
+## Pull back, let go
 
-The launcher is drawn as a cutaway below the board: the hammer draws back with the dial, the
-return spring compresses, a ball waits in the cradle, and a cone shows the scatter your next shot
-will actually get.
+The launcher is drawn as a cutaway below the board: press and hold anywhere on the playfield (or
+Space) and the hammer draws back from its BASE toward full over about a second; release and it
+fires at whatever the pull reached. A quick tap is a shot at BASE — which is what makes rapid
+fire aimable: drum the board and every ball leaves at roughly the slider's setting. The route
+odds bar sweeps in real time as you pull, so you can watch a shot's fate change while you build it.
 
-**Tap for a single deliberate shot; hold for continuous fire.** Tapping is real technique —
-単発打ち — and it costs you volume. Holding costs you accuracy: a shot from rest scatters ±0.35%,
-one fired flat out ±2.60%. The hammer, its return spring and the ball in the cradle never fully
-settle at the legal maximum rate.
+**BASE is the handle on the scale** in the cutaway — drag it. It is where taps fire from and
+where the hammer rests.
 
-That trade bites hardest exactly where it matters. Sit on the coin-flip dial and fire deliberately
-and you can hold it; machine-gun and you straddle it at random.
+**Firing fast costs accuracy, and then it costs more than accuracy.** A shot from rest scatters
+±0.35%; fired flat out, ±2.60%. And at the faster fire rates, a sustained low-power stream
+collides with itself in the launch channel — fouled balls fall back into the climbers and mill
+the stream down (measured: 83% fouls under maximum-rate mashing at the recommended base, versus
+1–3% for any tap rhythm with a breath in it). The jam is physical, it clears within seconds of
+easing off, the fouls are refunded, and the HUD names it while it happens. The operator ruled it
+a mechanic on the authority of a 1970s machine they owned, on which the same clog was worse.
+
+**Fire rate is a setting.** REGULATION holds the real 100 balls/minute ceiling — the law exists
+so ¥400/minute is the fastest a person may lose money at one of these. ARCADE (300/min, the
+default) and STORM (600/min) are this simulator taking the glass off: tempo changes, odds and
+prices do not, and the ledger keeps counting.
+
+## The lottery pays at three tiers
+
+The start pocket pays 3 balls and buys one spin — the reels above are a **readout of a verdict
+reached the instant the ball dropped in**, at odds printed on the frame. A **小当たり small win**
+(about 1 in 28 on the gentle machine) opens the attacker for seven seconds, capped at four
+entries — long enough to crank the dial right and harvest, which is exactly the *migi-uchi*
+switch a real jackpot demands. The small win is the tutorial for the big one, and it is
+skill-gated: sit on a left-route base and it pays you nothing, measured. An **ōatari** opens the
+attacker for rounds, runs the Shepard descent underneath, and counts itself up on the display.
 
 ## Controls
 
 | | |
 |---|---|
-| Drag on the board | set launch strength (up is harder) |
-| **Tap** | fire one ball — deliberate, precise |
-| **Hold**, or **Space** | continuous fire at the legal 100/minute |
-| **↑ ↓** (with Shift) | fine dial adjustment |
+| **Hold** board or **Space** | pull the hammer back — longer is harder |
+| **Release** | fire at the pull you reached |
+| **Tap** (or drum with two thumbs) | rapid shots at BASE |
+| **Drag the scale** in the cutaway | set BASE |
+| **↑ ↓** (with Shift) | fine BASE adjustment |
 | **V** | toggle varnish |
 | **T** | conjure 500 tokens — recorded in the ledger, because a parlour would never tell you |
 | **Esc** | title screen |
 
-During a jackpot, crank the dial past the threshold. The attacker is on the right-hand route and
-holding a low dial through ōatari throws most of it away — which is exactly what *migi-uchi* means.
+During a jackpot — or a small win's seven-second window — crank the dial right. The attacker is
+on the right-hand route and holding a low dial through it throws the prize away — which is
+exactly what *migi-uchi* means.
 
 ## Running it
 
@@ -140,12 +163,13 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 36 tests: physics, determinism, varnish law, value learning,
-                                #   the launcher's legal rate, the Shepard illusion
+npm test                        # 44 tests: physics, determinism, varnish law, value learning,
+                                #   the pull, the fire-rate contracts, the Shepard illusion
 node tools/board-audit.js       # find ball traps in the geometry before they find your statistics
 node tools/calibrate.js         # measure RTP against the real regulatory bands
 node tools/headless.js --sweep  # dial sweep: where every ball ends up, per dial position
 node tools/headless.js --threshold   # locate the route boundary, check it against the closed form
+node tools/headless.js --foulcurve   # measure the solo-shot foul cliff the topbar reads
 node tools/ramp-experiment.js   # run the Fiorillo/Niv dopamine argument on this machine
 ```
 

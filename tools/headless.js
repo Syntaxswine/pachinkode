@@ -16,15 +16,16 @@ const args = parseArgs(process.argv.slice(2))
  * The machine is given effectively unlimited tokens so the run is not cut short
  * by the economy; the economy is measured separately by tools/calibrate.js.
  */
-export function runTrial ({ balls = 500, dial = 0.5, seed = 1, spec = 'amadeji', live = 1, auto = true } = {}) {
-  const m = new Machine({ seed, spec, tokens: balls + 10 })
+export function runTrial ({ balls = 500, dial = 0.5, seed = 1, spec = 'amadeji', live = 1, auto = true, interval = LAUNCH_INTERVAL } = {}) {
+  const m = new Machine({ seed, spec, tokens: balls + 10, fireInterval: interval })
   m.dial = dial
   m.firing = true
   // A competent player cranks the dial over the threshold the moment the attacker
   // opens, because the attacker is only reachable on the right-hand route. Holding
   // one dial setting through a jackpot throws most of it away — measured at fixed
   // dial 0.30, three jackpots yielded 23 attacker entries out of a possible 162.
-  // Modelling the switch is what makes the RTP figure mean anything.
+  // Modelling the switch is what makes the RTP figure mean anything. The same
+  // switch applies to koatari: its seven-second window exists to be reacted to.
   const MIGI = 0.88
   const tally = {}
   const stuckAt = []
@@ -37,7 +38,7 @@ export function runTrial ({ balls = 500, dial = 0.5, seed = 1, spec = 'amadeji',
     guard++
     // Stop launching once the quota is out, then let the board finish draining.
     if (m.launched >= balls) m.firing = false
-    if (auto) m.dial = m.inJackpot ? MIGI : dial
+    if (auto) m.dial = (m.inJackpot || m.koatari) ? MIGI : dial
     m.step(DT)
     for (const ev of m.drain()) {
       switch (ev.type) {
@@ -71,11 +72,16 @@ export function runTrial ({ balls = 500, dial = 0.5, seed = 1, spec = 'amadeji',
 }
 
 function parseArgs (argv) {
-  const o = { balls: 400, dial: 0.5, seed: 1, spec: 'amadeji', sweep: false, threshold: false }
+  // `interval` is the launch cadence in seconds — 0.6 is regulation, 0.2 is the
+  // ARCADE default the shell ships with. A crowded board is a different board
+  // (balls collide on the rail and in the field), so any figure quoted for a
+  // fast rate must be MEASURED at that rate, not assumed from the slow one.
+  const o = { balls: 400, dial: 0.5, seed: 1, spec: 'amadeji', interval: LAUNCH_INTERVAL, sweep: false, threshold: false, foulcurve: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--sweep') o.sweep = true
     else if (a === '--threshold') o.threshold = true
+    else if (a === '--foulcurve') o.foulcurve = true
     else if (a.startsWith('--')) o[a.slice(2)] = isNaN(+argv[i + 1]) ? argv[++i] : +argv[++i]
   }
   return o
@@ -89,7 +95,7 @@ function sweep () {
   console.log('  ' + '─'.repeat(70))
   const allStuck = []
   for (let p = 0; p <= 1.0001; p += 0.1) {
-    const r = runTrial({ balls: args.balls, dial: p, seed: args.seed, spec: args.spec })
+    const r = runTrial({ balls: args.balls, dial: p, seed: args.seed, spec: args.spec, interval: args.interval })
     const f = (k) => ((r.tally[k] || 0) / Math.max(1, r.settled) * 100).toFixed(1).padStart(7)
     allStuck.push(...r.stuckAt)
     console.log(`  ${p.toFixed(2)} ${f('heso')} ${f('tulip')} ${f('attacker')} ${f('warp')} ${f('foul')} ${f('out')} ${f('stuck')}  ${r.meanHits.toFixed(1)}`)
@@ -128,7 +134,7 @@ function threshold () {
 
   const rows = []
   for (let p = 0; p <= 0.45001; p += 0.03) {
-    const m = new Machine({ seed: args.seed, tokens: balls + 60 })
+    const m = new Machine({ seed: args.seed, tokens: balls + 60, fireInterval: args.interval })
     m.dial = p; m.firing = true
     const seen = new Map()
     let right = 0, total = 0, guard = 0
@@ -165,8 +171,54 @@ function threshold () {
   console.log('export const ROUTE_ODDS = [\n' + lines.join(',\n') + '\n]\n')
 }
 
+/**
+ * Measure SOLO-shot foul probability by dial, and print a paste-ready
+ * FOUL_ODDS table for src/sim/board.js.
+ *
+ * Solo cadence (2.5 s) so no ball ever meets another — the per-shot property,
+ * scoped exactly like ROUTE_ODDS. This table exists because the topbar was
+ * printing 'FOUL' from a closed-form crest inversion, which put the boundary
+ * at power ≈ 0.135 while measurement says ~99% of solo shots at dial 0.06
+ * enter play — the same class of error as the old 50:50 tick, found by the
+ * same kind of audit. If a number is in front of the player, measure it.
+ */
+function foulcurve () {
+  const balls = Math.max(60, Math.min(args.balls, 240))
+  console.log(`\n  measuring ${balls} SOLO shots per dial (cadence 2.5 s), seed ${args.seed}\n`)
+  console.log('  dial   foul share')
+  console.log('  ' + '─'.repeat(46))
+  const rows = []
+  for (const p of [0, 0.03, 0.06, 0.09, 0.12, 0.15, 0.21, 0.30]) {
+    const m = new Machine({ seed: args.seed, tokens: balls * 2, fireInterval: 2.5 })
+    m.dial = p
+    m.firing = true
+    let fouls = 0, guard = 0
+    while (guard < 3e7) {
+      guard++
+      if (m.launched >= balls) m.firing = false
+      m.step(DT)
+      for (const ev of m.drain()) if (ev.type === 'foul') fouls++
+      if (!m.firing && m.world.balls.length === 0) break
+    }
+    const f = fouls / balls
+    rows.push([p, +f.toFixed(2)])
+    console.log(`  ${p.toFixed(2)}   ${(f * 100).toFixed(0).padStart(3)}%  ${bar(f)}`)
+  }
+  // Non-increasing clamp: more speed cannot honestly mean more solo fouls;
+  // the wobble is sampling noise, same argument as ROUTE_ODDS' clamp.
+  let run = 1
+  for (const r of rows) { run = Math.min(run, r[1]); r[1] = +run.toFixed(2) }
+  rows.push([1.00, rows[rows.length - 1][1]])
+  console.log('\n  Paste into src/sim/board.js as FOUL_ODDS:\n')
+  const lines = []
+  for (let i = 0; i < rows.length; i += 5) {
+    lines.push('  ' + rows.slice(i, i + 5).map(([d, s]) => `[${d.toFixed(2)}, ${s.toFixed(2)}]`).join(', '))
+  }
+  console.log('export const FOUL_ODDS = [\n' + lines.join(',\n') + '\n]\n')
+}
+
 function single () {
-  const r = runTrial({ balls: args.balls, dial: args.dial, seed: args.seed, spec: args.spec })
+  const r = runTrial({ balls: args.balls, dial: args.dial, seed: args.seed, spec: args.spec, interval: args.interval })
   const m = r.machine
   console.log(`\n  ${SPECS[args.spec].label} — ${r.launched} balls at dial ${args.dial}, seed ${args.seed}`)
   console.log(`  ${r.meanHits.toFixed(1)} nail strikes per ball · ${m.spins} spins · ${m.jackpots} jackpots`)
@@ -176,6 +228,15 @@ function single () {
   for (const [k, v] of Object.entries(r.tally).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${k.padEnd(9)} ${String(v).padStart(6)}  ${(v / total * 100).toFixed(1).padStart(5)}%  ${bar(v / total)}`)
   }
+  if (r.stuckAt.length) {
+    console.log(`\n  ${r.stuckAt.length} stuck. Sites (2 cm bins):`)
+    const bins = new Map()
+    for (const s of r.stuckAt) {
+      const k = `${(Math.round(s.x / 0.02) * 0.02).toFixed(2)},${(Math.round(s.y / 0.02) * 0.02).toFixed(2)}`
+      bins.set(k, (bins.get(k) || 0) + 1)
+    }
+    for (const [k, v] of [...bins].sort((a, b) => b[1] - a[1]).slice(0, 8)) console.log(`    (${k})  ×${v}`)
+  }
   console.log()
 }
 
@@ -183,5 +244,6 @@ const invoked = process.argv[1] && import.meta.url.endsWith(process.argv[1].repl
 if (invoked) {
   if (args.sweep) sweep()
   else if (args.threshold) threshold()
+  else if (args.foulcurve) foulcurve()
   else single()
 }

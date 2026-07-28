@@ -88,7 +88,7 @@
   #play.on { display: flex; }
   #stage { flex: 1 1 auto; position: relative; display: flex;
            align-items: center; justify-content: center; min-width: 0; }
-  canvas { display: block; touch-action: none; cursor: ns-resize; }
+  canvas { display: block; touch-action: none; cursor: pointer; }
   #panel { flex: 0 0 254px; background: var(--panel); border-left: 1px solid var(--faint);
            padding: 14px 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 13px; }
   .sect { border-top: 1px solid var(--faint); padding-top: 10px; }
@@ -132,8 +132,8 @@
     One knob. Eleven-millimetre steel. A lottery you do not control.
   </div>
   <nav class="menu">
-    <button data-go="play">PLAY<small>fire balls · find the threshold</small></button>
-    <button data-go="options">OPTIONS<small>sound · varnish · machine class</small></button>
+    <button data-go="play">PLAY<small>hold to pull · release to fire · tap for rapid shots · drag the scale to set BASE</small></button>
+    <button data-go="options">OPTIONS<small>sound · varnish · fire rate · machine class</small></button>
     <button data-go="about">ABOUT<small>what is real in here, and what is not</small></button>
   </nav>
 </section>
@@ -156,6 +156,17 @@
         <div class="segs"><button id="vMute" aria-pressed="false">SILENCE THE MACHINE</button></div><output></output></div>
       <div class="note">IMPACTS is steel on brass — the rain of the nail field. BED is the drone
         underneath, which detunes as the outcome becomes less certain.</div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">FIRE RATE</div>
+      <div class="segs" id="rateSegs"></div>
+      <div class="note">A real machine may not exceed <b>100 balls per minute</b> — the ceiling
+        exists so that ¥400 a minute is the fastest a person is permitted to lose money at one.
+        REGULATION holds that limit exactly. The faster settings are this simulator taking the
+        glass off: more balls in flight, more of the board alive at once. Tempo changes; the odds,
+        the payouts and the price of a ball do not, and the ledger keeps counting at the real
+        rental rate. Takes effect immediately.</div>
     </div>
 
     <div class="grp">
@@ -244,7 +255,8 @@
     <canvas id="board"></canvas>
     <div id="topbar">
       <span class="esc" id="toTitle">‹ ESC</span>
-      <span>DIAL <b id="tDial">—</b></span>
+      <span>BASE <b id="tDial">—</b></span>
+      <span>PULL <b id="tPull">—</b></span>
       <span>ROUTE <b id="tRoute">—</b></span>
       <span id="tState"></span>
     </div>

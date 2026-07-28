@@ -300,6 +300,25 @@ export function launchPoint () {
  * Sampled at 220 balls per point, monotonicity enforced (the wobble is sampling
  * noise; the underlying relationship is monotone and odds that went backwards as
  * you turned the dial up would be a lie in the other direction).
+ *
+ * SCOPE: these are SOLO-SHOT odds — a ball with the channel to itself, which is
+ * what the regulation cadence (and any deliberate tap) gives it. They hold
+ * under rapid fire for dials ≥ ~0.15 (measured at 0.2 s cadence: within a few
+ * points of this table from 0.18 up). BELOW that, under sustained rapid fire,
+ * the split is collision-dominated and genuinely unpredictable: consecutive
+ * slow balls rear-end each other on the climb — measured 347 in-channel
+ * ball-ball impacts per 200 balls at dial 0.06 / 0.2 s cadence, versus 45 at
+ * regulation — and the measured share swings tens of points between runs
+ * (29%, then 50%, same seed, different n). No table can honestly describe that
+ * regime; the HUD instead names it while it is happening. The channel jam
+ * itself is kept deliberately: it is physical, it clears within seconds of
+ * easing off, and the operator has ruled it a mechanic from direct experience —
+ * on a 1970s machine they owned, with no return-ball prevention at all, the
+ * clog was CUMULATIVE: none of the returning balls had escape velocity and all
+ * of them came back down into the plunger area. Modern boards carry return
+ * prevention parts (patents JP2003033484A, JP2978440B2) that reduce but do not
+ * eliminate it. This board sits between the two: fallers interfere while the
+ * stream runs, then settle and are refunded once it stops.
  */
 export const ROUTE_ODDS = [
   [0.00, 0.10], [0.03, 0.10], [0.06, 0.18], [0.09, 0.27], [0.12, 0.31],
@@ -320,6 +339,38 @@ export function routeOdds (dial) {
     }
   }
   return ROUTE_ODDS[ROUTE_ODDS.length - 1][1]
+}
+
+/**
+ * Measured probability that a SOLO shot fouls (fails to crest), by dial.
+ *
+ * This replaces a closed-form crest inversion the topbar used to print 'FOUL'
+ * from, which put the boundary at power ≈ 0.135 — while measurement says ~99%
+ * of solo shots at dial 0.06 enter play. Same failure class as the old 50:50
+ * tick: an estimate drawn as a fact, a third of the travel out of place. The
+ * real cliff is sharp and low: 99% at dial 0.00, 53% at 0.03, ~1% by 0.06.
+ *
+ * Regenerate with:  node tools/headless.js --foulcurve --balls 150
+ * Solo cadence, non-increasing clamp (more speed cannot honestly mean more
+ * solo fouls; the wobble is sampling noise).
+ */
+export const FOUL_ODDS = [
+  [0.00, 0.99], [0.03, 0.53], [0.06, 0.01], [0.09, 0.01], [0.12, 0.01],
+  [0.15, 0.01], [0.21, 0.00], [0.30, 0.00], [1.00, 0.00]
+]
+
+/** P(solo shot fouls) at a dial setting, interpolated from the measurements. */
+export function foulOdds (dial) {
+  const d = Math.max(0, Math.min(1, dial))
+  for (let i = 1; i < FOUL_ODDS.length; i++) {
+    const [x1, y1] = FOUL_ODDS[i]
+    if (d <= x1) {
+      const [x0, y0] = FOUL_ODDS[i - 1]
+      const t = x1 === x0 ? 0 : (d - x0) / (x1 - x0)
+      return y0 + (y1 - y0) * t
+    }
+  }
+  return FOUL_ODDS[FOUL_ODDS.length - 1][1]
 }
 
 /** The dial setting where the two routes are closest to even odds. */
