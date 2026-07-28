@@ -382,7 +382,8 @@ re-calibrate after touching it.**
   They are the first two jobs of the keystone below.
 
 Economy re-measured at 8 × 24 000 after both the small win and the opening sequence: amadeji
-82.6% ± 16.3%, standard 71.3% ± 16.9%, loose 102.3% ± 13.8% — all inside the 4 h band. 46 tests;
+82.6% ± 16.3%, standard 71.3% ± 16.9%, loose 102.3% ± 13.8% — all inside the 4 h band
+(Builder 3's section: the buckets moved these). 46 tests;
 board audit clean both ways.
 
 ---
@@ -516,3 +517,146 @@ And keep the switch. Whatever else changes, keep the switch.
 — *Builder 1 · Claude Fable 5 · 2026-07-28*
 
 ---
+
+---
+
+# BUILDER 3 — THE RUN
+
+*Added below Builder 2. Nothing above this line was changed except figures that measurement moved.*
+
+The operator's brief: make it a roguelike. Unlockable cabinets, extra and wider buckets, other
+advantages, difficulty that starts much harder and — past a threshold of unlocks — gets
+increasingly easy to reach absurd scores. More bright lights and colour tied to score. A cross
+between Peggle and Raccoin.
+
+## What is here now
+
+**A run is twelve floors.** Each sets a quota and a tray of balls. Clear it and the BACK ROOM
+deals parts; from floor 3 it deals twice, from floor 6 three times. Clearing floor 12 **banks the
+win** and the floors keep coming — OVERTIME is unbounded.
+
+**The board is now an argument.** `buildBoard(loadout)` — `src/sim/loadout.js` is the single
+source of truth for what is bolted on. Six bucket sites, a widening ceiling, the life-nail gap,
+the warp mouths, the tulips' resting pose. A part is new brass in the field, not a modifier
+applied afterwards, and every floor rebuilds the Machine and the Dopamine model because of it.
+
+**Three new instruments**, and they are the deliverable as much as the game is:
+
+| tool | question |
+|---|---|
+| `loadout-audit.js` | does EVERY board a run can build contain a ball trap? (a gate — exit 1) |
+| `run-sim.js --curve` | what is the difficulty curve, and where do the two curves cross? |
+| `run-sim.js --power` | what is one part actually worth? |
+| `run-sim.js --sites` | does a ball ever ACTUALLY reach that bucket? |
+
+`tools/lib/pinch.js` is the wedge scan, extracted so `board-audit` and `loadout-audit` cannot
+drift on what counts as a trap.
+
+## The four things that only measurement caught
+
+**1. The curve could not cross, and no constant could fix it.** A part is worth a measured ×1.30.
+I assumed ×1.25 and set the growth ratio to 1.72, then 1.40, then 1.22 — all of which are two
+straight lines on a log plot, and the run died at floor 4–5 every time. A crossover needs a
+different SHAPE, not a different slope. `picksFor()` — parts per floor rising with depth — is the
+whole mechanism, and `test/run.test.js` fails if anyone flattens it to a constant.
+
+**2. "Hard" is a margin, not a death rate.** My own tool printed a target band of 35–55% for the
+floor-1 clear rate. That band is wrong and the tool now says so in a comment: clear rates
+COMPOUND, so four floors at 50% means six per cent of runs see floor 5. The early difficulty lives
+in cost-to-clear (65% of the tray at floor 1, 4% at floor 12), not in deaths.
+
+**3. The tray is not a clock.** Reading the floor's remaining balls off the machine's token
+balance seemed obviously right — the machine already maintains that number correctly. It does; it
+just does not maintain the number a run needs. A pachinko tray refills out of its own pockets, and
+floor 8 measured at **746% of its stated allowance** to clear. The clock is LAUNCHES now, and the
+connection back to the tray is a part (BALL RETURN) the player fits on purpose.
+
+**4. There is no seventh bucket site.** A `westHigh` at the upper-left flank passed every geometry
+check and then scored **zero across 16 floors and 126 entries**. Not rarely: never. The cause is
+the board's own emergent asymmetry — a right-route ball rides the outer wall down the far side, a
+left-route ball falls inward at 250° and rains down the middle, and nothing delivers a ball to the
+upper-left flank at all. The board holds six cups. The per-site score multipliers now invert the
+measured arrival spread so a starved mouth is still worth drafting.
+
+## Traps, for whoever is next
+
+- **Every new bucket site must be probed at the WIDEST mouth**, not the stock one, and the probe
+  grid must be finer than 8 mm. Mine was 8 mm and 0.220 fell between two rows, which hid a
+  diagonal 11.6 mm pinch into the nook under a cup's bottom corner. Face-to-face gaps are the easy
+  case; corner nooks are the one that got through.
+- **Nudging a cup away from a wall makes things worse before better.** The perpendicular gap
+  passes THROUGH the trap band on its way to being safely wide.
+- **The old pinch scan exempted any pair where EITHER segment was pocket furniture**, which meant
+  a tulip cup converging on the launch rail was invisible to the tool — and `board-audit.js`'s own
+  header lists exactly that as one of three traps chased by hand. It was chased by hand because
+  the instrument was looking away. The exemption now requires both segments to belong to the same
+  pocket, and `attacker-flap` moved to the wall CHAIN where it always belonged (it is built as an
+  arc of the bowl wall, so two points on it are a chord, not a pinch).
+- **An instrument that cannot answer a question must refuse to.** My first reachability check was a
+  flood fill, and it reported the two stock buckets as unreachable — a 4 mm grid cannot represent
+  the 1 mm clearance of a 13 mm mouth or the 7 mm gaps in a 20 mm nail pitch, so it returned noise
+  shaped like an answer. `blockedPockets` now asks only whether a wall stands over the mouth, and
+  `--sites` fires actual balls for the rest.
+- **A windmill is not a blocker.** Counting rotors in that check flagged both stock buckets as
+  broken. A rotor spins and sheds; a bucket in a windmill's shadow is a bucket the windmill feeds.
+- **`document.hidden` is true in the in-app preview pane**, so rAF is throttled to nothing and a
+  browser harness sees a frozen board. `__pachinkode.tick(n, dt)` exists for that: the harness
+  supplies the clock the browser is refusing to. Screenshots still need the `/__shot` sink.
+
+## Left undone
+
+- **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
+  floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one
+  text field away, and the determinism is already there.
+- **The chain barely breaks at ARCADE.** Measured, a floor-1 chain reached 26 without ever
+  lapsing, which makes PATIENT CHAINS a weak part at the default fire rate and a strong one at
+  REGULATION. That is coherent — it is documented as "what makes the slow, legal machine playable"
+  — but it has not been measured at all three rates, and it should be.
+- **Bucket entries are not a reward cue.** They pay a ball, so they reach `rewardPulse` through the
+  ledger like everything else, but they have no voice of their own. They are the loudest visual
+  event in the game and the quietest audible one.
+- **The auto-player does not aim.** Every difficulty number here is therefore a FLOOR on what a
+  human can do, which is the right direction to be wrong in but makes the curve conservative.
+- Builder 1's nail-bending keystone is still unbuilt — though the loadout layer now bends the life
+  nails at BUILD time, which is a different thing and does not consume it.
+- Builder 2's conditioning ledger is still unbuilt, and `tools/cue-contingency.mjs` still does not
+  exist.
+
+## An observation from the operator, recorded because it is a real finding
+
+Listening to a run at the ARCADE rate: *"the rapid sound of the balls being shot sounds like a
+Bolang gu"* — 拨浪鼓, the Chinese pellet drum with two beads on strings.
+
+Nothing here synthesises a pellet drum. What happens is that `launch()` lands on a strict 0.2 s
+beat while `impact()` and the rain bed fill the gaps with brass strikes at a rate the launcher
+itself sets, so the ear hears one instrument with a periodic body and a stochastic skin — which is
+exactly a pellet drum's signature. It is the same kind of fact as the route split: nobody designed
+it, it fell out of the parts. It is noted in `src/audio/synth.js` because a future builder
+retuning the impact budget or the launch envelope will change it without meaning to.
+
+## Maker's mark
+
+I did almost nothing by taste. Every number in the run layer that could be measured, was: the
+quota base and growth against a measured per-part power, the pick ramp against a measured
+crossover, the bucket positions against a position probe, the site values against measured arrival
+rates, the widening ceiling against what the audit would allow. Four separate times the
+measurement told me my design intuition was not merely mis-tuned but structurally wrong, and each
+of those is written down in the file it belongs to rather than smoothed over.
+
+The thing I care most about is that **the seventh bucket is missing**. It would have been trivial
+to leave in — it looked right, it passed the geometry gate, and no player would ever have proved
+it dead. It is gone because the instrument said so, and the reason it is dead is the same
+centripetal condition Builder 1 discovered by accident and never designed. The board's oldest
+emergent fact reached forward and deleted a feature. That is a project whose bedrock is
+load-bearing.
+
+**The forward dream.** The roguelike is the hook; the exhibit is still the point. What I would
+love to see is the two finally colliding: a run that ends by telling you how much of your score
+came from the honest prizes and how much from the lottery, in the same breath as Builder 2's
+receipt for what the sounds taught you. The parts you chose are a record of what you thought was
+valuable. The machine already knows whether you were right.
+
+And keep the switch. It survived a scoring layer, which is the hardest thing that has ever been
+asked of it.
+
+— *Builder 3 · Claude Opus 5 · 2026-07-28*

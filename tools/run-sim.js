@@ -1,0 +1,351 @@
+// Play whole runs with nobody at the controls, and report what happened.
+//
+//   node tools/run-sim.js                      # 20 runs on the stock cabinet
+//   node tools/run-sim.js --cab uramono --n 8
+//   node tools/run-sim.js --curve              # the difficulty curve, per floor
+//   node tools/run-sim.js --sites              # per-bucket entry counts
+//   node tools/run-sim.js --greedy value       # a different drafting brain
+//
+// ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+//
+// The operator asked for a specific SHAPE: much harder at the start, and past a
+// threshold of unlocks, increasingly easy to reach absurd scores. That is a
+// claim about two curves crossing, and there is exactly one honest way to know
+// whether the constants in run.js produce it — play it, several hundred times,
+// and look.
+//
+// Everything this tool prints is a measurement of the real simulation: real
+// physics at 1200 Hz, real board geometry rebuilt for every part taken, the
+// real lottery. Nothing is modelled twice. The auto-player is the only fiction,
+// and its limits are stated below.
+//
+// ── WHAT THE AUTO-PLAYER IS AND IS NOT ──────────────────────────────────────
+//
+// It holds a base dial, cranks right during a jackpot or a small win, and takes
+// the best-looking part on offer. It is a COMPETENT player, not a good one: it
+// does not aim at a bucket it has just been given, it does not read the board,
+// and it never varies its dial to chase a chain. Every number here is therefore
+// a FLOOR on what a human can do, which is the useful direction for a
+// difficulty measurement to be wrong in — if the machine is beatable by this,
+// it is beatable.
+
+import { Machine, FIRE_RATES } from '../src/sim/machine.js'
+import { DT } from '../src/sim/world.js'
+import { Run, quotaFor, QUOTA_BASE, QUOTA_GROWTH, BALLS_BASE, FLOORS } from '../src/sim/run.js'
+import { CABINETS, CABINET_ORDER } from '../src/sim/cabinets.js'
+import { PART_BY_ID, drawOffers, resolveLoadout } from '../src/sim/loadout.js'
+
+const argv = process.argv.slice(2)
+const flag = (n) => argv.includes('--' + n)
+const arg = (n, d) => { const i = argv.indexOf('--' + n); return i < 0 ? d : argv[i + 1] }
+const num = (n, d) => +arg(n, d)
+
+const RATE = FIRE_RATES[arg('rate', 'arcade')].interval
+const BASE_DIAL = num('dial', 0.20)
+const MIGI = 0.88
+
+// ── the drafting brain ──────────────────────────────────────────────────────
+//
+// Three policies, because "is the curve right" and "is the curve right for a
+// player who only ever takes multipliers" are different questions, and a
+// catalogue where one policy dominates is a catalogue with a dead half.
+const BRAINS = {
+  // Take whatever is offered first. The honest baseline: a player who has not
+  // worked anything out yet. If the curve only works for an optimiser, it does
+  // not work.
+  naive: (offers) => offers[0],
+  // Rate first, then value, then economy. Roughly what a good player does.
+  balanced: (offers) => {
+    const rank = { bucket: 0, widen: 1, balls: 2, bucketvalue: 3, mult: 4, combostep: 5 }
+    return [...offers].sort((a, b) => (rank[a.id] ?? 9) - (rank[b.id] ?? 9))[0]
+  },
+  // Multipliers above all. The obvious trap policy: it looks strongest and
+  // starves the board of scoring EVENTS to multiply.
+  value: (offers) => {
+    const rank = { mult: 0, bucketvalue: 1, hesovalue: 2, combostep: 3 }
+    return [...offers].sort((a, b) => (rank[a.id] ?? 9) - (rank[b.id] ?? 9))[0]
+  }
+}
+const BRAIN = BRAINS[arg('greedy', 'balanced')] || BRAINS.balanced
+
+/**
+ * Play one floor to its conclusion. Returns when the run leaves 'playing'.
+ *
+ * A fresh Machine per floor, because the board is a function of the loadout and
+ * a part taken between floors is new brass. The machine's token balance is
+ * seeded from the run's allowance and is thereafter the authority on how many
+ * balls are left — see run.js.
+ */
+function playFloor (run, seed, siteTally) {
+  const m = new Machine({
+    seed,
+    spec: run.cabinet.spec,
+    tokens: run.ballsLeft,
+    fireInterval: RATE,
+    loadout: run.loadout
+  })
+  m.dial = BASE_DIAL
+  m.firing = true
+
+  // A floor cannot run forever even in principle, but a floor whose payouts
+  // outpace its launches can run for a very long time, and this is a batch
+  // tool. The guard is a wall-clock backstop, not a rule of the game — it is
+  // deliberately far above any real floor (20× the allowance in launches).
+  const launchCap = run.ballsAtStart * 20
+  let guard = 0
+  const maxSteps = 90 * 60 * 1200      // 90 simulated minutes
+
+  while (run.status === 'playing' && guard++ < maxSteps) {
+    // The run owns the clock; the machine owns the tray. Keeping the tray
+    // topped up to the run's remaining launches is what makes the two agree on
+    // screen without either one reaching into the other's bookkeeping — the
+    // machine's spent/won ledger stays honest either way, because those move on
+    // launches and payouts rather than on the balance.
+    m.tokens = Math.max(0, run.ballsLeft)
+    m.firing = run.ballsLeft > 0 && m.launched < launchCap
+    m.dial = (m.inJackpot || m.koatari) ? MIGI : BASE_DIAL
+    m.step(DT)
+    const evs = m.drain()
+    if (siteTally) for (const ev of evs) if (ev.type === 'bucket') {
+      siteTally[ev.site] = (siteTally[ev.site] || 0) + 1
+    }
+    run.observe(evs, DT, { inFlight: m.world.balls.length })
+    if (run.ballsLeft <= 0 && m.world.balls.length === 0) break
+    if (m.launched >= launchCap && m.world.balls.length === 0) break
+  }
+  // If a guard broke the loop while the run still thought it was playing, the
+  // floor did not end — and the caller's `while` would hand the SAME floor back
+  // to be played again, quietly inflating every per-floor statistic. (It did:
+  // the first curve run reported nine floor-1 attempts across eight runs.) A
+  // floor the auto-player could not finish is a floor it did not clear.
+  if (run.status === 'playing') run.fail()
+  return { launched: m.launched, rtp: m.rtp, jackpots: m.jackpots }
+}
+
+/** Play a whole run. Returns the finished Run plus a per-floor trace. */
+function playRun (cabKey, seed, siteTally) {
+  const run = new Run(CABINETS[cabKey], seed)
+  const trace = []
+  // OVERTIME is unbounded by design, so this loop needs a stop and the stop
+  // has to be VISIBLE. A batch tool that silently truncates a run reports
+  // "cleared 100%" for a floor it simply stopped watching, which reads as data.
+  const FLOOR_CAP = FLOORS + 120
+  let guard = 0
+  while (run.status !== 'failed' && guard++ < FLOOR_CAP) {
+    const floor = run.floor
+    const quota = run.quota
+    const balls = run.ballsLeft
+    const stats = playFloor(run, seed * 1000 + floor, siteTally)
+    trace.push({
+      floor, quota, balls,
+      score: run.floorScore,
+      cleared: run.status === 'cleared',
+      launched: stats.launched,
+      bestChain: run.bestChain,
+      parts: run.loadout.parts.length
+    })
+    run.drain()
+    // Drain the back room: from floor 4 it deals more than once.
+    let picks = 0
+    while (run.status === 'cleared' && picks++ < 6) {
+      const pick = BRAIN(run.offers)
+      if (pick) run.take(pick.id); else run.skip()
+      run.drain()
+    }
+  }
+  if (run.status !== 'failed') {
+    truncated++
+  }
+  return { run, trace }
+}
+
+let truncated = 0
+
+// ── modes ───────────────────────────────────────────────────────────────────
+
+const pct = (x) => (x * 100).toFixed(0) + '%'
+const nf = (x) => Math.round(x).toLocaleString('en-US')
+
+if (flag('sites')) {
+  // Per-bucket entry counts. This is the REAL reachability answer that the
+  // geometry audit deliberately refuses to guess at: a site that never sees a
+  // ball is a dead draft pick however clean its walls are.
+  const tally = {}
+  const N = num('n', 6)
+  console.log(`\n  bucket entries over ${N} runs on a fully-bucketed board\n`)
+  for (let i = 0; i < N; i++) {
+    const run = new Run(CABINETS.floor, i + 1)
+    for (let k = 0; k < 7; k++) run.loadout.buckets.length < 7 && PART_BY_ID.bucket.apply(run.loadout)
+    playFloor(run, i + 1, tally)
+  }
+  const rows = Object.entries(tally).sort((a, b) => b[1] - a[1])
+  const total = rows.reduce((s, r) => s + r[1], 0) || 1
+  for (const [site, n] of rows) {
+    console.log(`    ${site.padEnd(10)} ${String(n).padStart(6)}   ${pct(n / total).padStart(5)}` +
+      `  ${'█'.repeat(Math.round(40 * n / rows[0][1]))}`)
+  }
+  const dead = ['westLow', 'eastLow', 'westDeep', 'eastDeep', 'centre', 'westHigh', 'eastHigh']
+    .filter(s => !tally[s])
+  console.log(dead.length
+    ? `\n  DEAD SITES (never scored): ${dead.join(', ')}\n`
+    : `\n  Every site scores. No dead draft picks.\n`)
+  process.exit(0)
+}
+
+if (flag('power')) {
+  // How much is a part actually WORTH?
+  //
+  // This is the measurement the quota curve has to be fitted against, and I
+  // guessed at it twice before building it — both times high. Play a fixed
+  // 160-ball floor with k parts already fitted, with an unreachable quota so
+  // the floor always runs to the last ball, and read the mean score. The ratio
+  // between consecutive k is the per-part multiplier, and it is the number that
+  // decides whether QUOTA_GROWTH is survivable.
+  const N = num('n', 6)
+  const MAX = num('max', 10)
+  console.log(`\n  scoring power vs parts fitted — ${arg('greedy', 'balanced')} drafting, ` +
+    `${N} floors each, quota unreachable so every floor runs the full tray\n`)
+  console.log('   parts   mean floor score   ×prev   ×stock')
+  let prev = null, stock = null
+  for (let k = 0; k <= MAX; k++) {
+    const scores = []
+    for (let i = 0; i < N; i++) {
+      const run = new Run(CABINETS.floor, i + 101)
+      // Draft k parts using the real offer stream, then make the floor endless.
+      for (let j = 0; j < k; j++) {
+        const offers = drawOffers(run.loadout, run.rng, 3)
+        const pick = BRAIN(offers)
+        if (pick) resolveLoadout([pick.id], run.loadout)
+      }
+      run.quota = Infinity
+      run.ballsLeft = run.ballsAtStart = 160 + run.loadout.ballBonus
+      playFloor(run, i + 101)
+      scores.push(run.floorScore)
+    }
+    const mean = scores.reduce((s, x) => s + x, 0) / N
+    if (stock === null) stock = mean
+    console.log(`   ${String(k).padStart(5)}   ${nf(mean).padStart(16)}   ` +
+      `${(prev ? (mean / prev).toFixed(2) : '  — ').padStart(5)}   ${(mean / stock).toFixed(2)}×`)
+    prev = mean
+  }
+  console.log(`\n  QUOTA_GROWTH is ${QUOTA_GROWTH}. A floor is survivable only if the parts ` +
+    `taken\n  between two floors are worth more than that.\n`)
+  process.exit(0)
+}
+
+if (flag('curve')) {
+  // The headline measurement. For each floor, how often does a run that
+  // REACHED it clear it, and by how much?
+  const N = num('n', 24)
+  const cab = arg('cab', 'floor')
+  console.log(`\n  difficulty curve — ${CABINETS[cab].label}, ${N} runs, ` +
+    `${arg('greedy', 'balanced')} drafting, ${arg('rate', 'arcade')} fire rate`)
+  console.log(`  quota = ${nf(QUOTA_BASE)} × ${QUOTA_GROWTH}^(floor−1) × ` +
+    `${CABINETS[cab].difficulty}   ·   ${BALLS_BASE} balls + parts\n`)
+  // ── the metric, and why it is not score/quota ────────────────────────────
+  //
+  // The obvious measurement is mean score ÷ quota, and it is worthless here: a
+  // floor ENDS the instant the quota is met, so a cleared floor's ratio is
+  // pinned just above 1.00 by construction and every floor in the run reports
+  // "1.00×" whether it was a scrape or a rout. The first version of this tool
+  // printed exactly that column, ten identical bars, and it looked like data.
+  //
+  // What actually separates a hard floor from a trivial one is COST: how much
+  // of the ball allowance the clear consumed. A floor cleared on 90% of the
+  // tray is a knife fight; one cleared on 12% is a formality. That number is
+  // free to fall as far as the parts can push it, which is precisely the shape
+  // the operator asked to see.
+  // Keyed rather than fixed-length: since clearing floor 12 opens OVERTIME
+  // instead of ending the run, the floor number is unbounded and a
+  // FLOORS-sized array throws the first time a run gets good.
+  const reached = {}
+  const cleared = {}
+  const cost = {}
+  const bump = (o, f, v) => { (o[f] = o[f] || []).push(v) }
+  let wins = 0
+  const scores = []
+  for (let i = 0; i < N; i++) {
+    const { run, trace } = playRun(cab, i + 1)
+    for (const t of trace) {
+      reached[t.floor] = (reached[t.floor] || 0) + 1
+      if (t.cleared) {
+        cleared[t.floor] = (cleared[t.floor] || 0) + 1
+        bump(cost, t.floor, t.launched / t.balls)
+      }
+    }
+    if (run.cleared) wins++
+    scores.push(run.score)
+  }
+  const mean = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
+  console.log('   floor   quota      reached  cleared   tray spent to clear')
+  const deepest = Math.max(...Object.keys(reached).map(Number))
+  for (let f = 1; f <= deepest; f++) {
+    if (!reached[f]) continue
+    const c = mean(cost[f] || [])
+    // Clamped, and flagged when it is. Deep in OVERTIME a floor can cost many
+    // times its allowance (BALL RETURN keeps stretching the tray), and an
+    // unclamped bar prints three hundred blocks and destroys the table.
+    const over = c > 1
+    const bar = Number.isNaN(c) ? '' : '█'.repeat(Math.max(1, Math.round(Math.min(1, c) * 30))) +
+      (over ? '▸' : '')
+    console.log(`   ${String(f).padStart(4)}${f > FLOORS ? '+' : ' '} ` +
+      `${nf(quotaFor(f, null, CABINETS[cab].difficulty)).padStart(11)}` +
+      `   ${String(reached[f]).padStart(6)}   ${pct((cleared[f] || 0) / reached[f]).padStart(5)}` +
+      `   ${(Number.isNaN(c) ? '    —' : pct(c).padStart(5))}  ${bar}`)
+  }
+  scores.sort((a, b) => a - b)
+  console.log(`\n  runs won: ${wins}/${N}   median score ${nf(scores[N >> 1])}` +
+    `   best ${nf(scores[N - 1])}`)
+  // The crossover: the first floor from which clearing costs less than HALF the
+  // tray, and never costs more again. That is the moment the player's curve has
+  // overtaken the wall for good — before it, every floor is a fight to the last
+  // ball; after it, the quota is a formality and the remaining balls are pure
+  // score. It is the one number this whole tool is for.
+  let crossover = null
+  for (let f = 1; f <= FLOORS; f++) {
+    if (!(cost[f] || []).length) continue
+    const ok = []
+    for (let g = f; g <= FLOORS; g++) {
+      if (!(cost[g] || []).length) continue
+      ok.push(mean(cost[g]) < 0.5)
+    }
+    if (ok.length && ok.every(Boolean)) { crossover = f; break }
+  }
+  console.log(`  crossover floor: ${crossover ?? 'never'}` +
+    `   (target 4–8: earlier is a pushover, later is a wall)`)
+  // The target band here started at 35–55% and that was wrong, which the tool
+  // itself is what proved. Floor clear rates COMPOUND: a run that clears each
+  // of its first four floors half the time reaches floor 5 six per cent of the
+  // time, so a 45% first floor does not produce a hard game, it produces a
+  // game nobody sees past the second screen. The difficulty of the early
+  // floors has to live in the MARGIN — floor 1 costs 90%+ of the tray to
+  // clear — not in the failure rate.
+  console.log(`  floor-1 clear rate: ${pct((cleared[1] || 0) / (reached[1] || 1))}` +
+    `   (target 60–75%: the early floors hurt in COST, not in deaths)\n`)
+  process.exit(0)
+}
+
+// ── default: a batch of runs, summarised ────────────────────────────────────
+
+const N = num('n', 20)
+const cabs = arg('cab', null) ? [arg('cab')] : CABINET_ORDER
+console.log(`\n  ${N} runs per cabinet · ${arg('greedy', 'balanced')} drafting · ` +
+  `${arg('rate', 'arcade')}\n`)
+console.log('   cabinet        diff   floors (mean/best)   won    median score      best')
+for (const key of cabs) {
+  const floors = []
+  const scores = []
+  let wins = 0
+  for (let i = 0; i < N; i++) {
+    const { run } = playRun(key, i + 1)
+    floors.push(run.floor)
+    scores.push(run.score)
+    if (run.cleared) wins++
+  }
+  scores.sort((a, b) => a - b)
+  const meanF = floors.reduce((s, x) => s + x, 0) / N
+  console.log(`   ${CABINETS[key].label.padEnd(16)} ${String(CABINETS[key].difficulty).padStart(4)}` +
+    `   ${meanF.toFixed(1).padStart(5)} / ${String(Math.max(...floors)).padStart(2)}` +
+    `        ${String(wins).padStart(2)}/${N}  ${nf(scores[N >> 1]).padStart(12)}  ${nf(scores[N - 1]).padStart(10)}`)
+}
+console.log('')

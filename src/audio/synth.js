@@ -42,6 +42,26 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
  *
  * Nothing reads this yet. That is deliberate — see the keystone.
  */
+// ── an observation worth recording ──────────────────────────────────────────
+//
+// The operator, listening to a run at the ARCADE fire rate: "the rapid sound of
+// the balls being shot sounds like a 拨浪鼓" — a bolang gu, the Chinese pellet
+// drum, the one with two beads on strings that strike the head as the handle is
+// twisted.
+//
+// That is a better description of this layer than anything written for it, and
+// it is describing an emergent texture rather than a voice. Nothing here
+// synthesises a pellet drum. What happens is that `launch()` lands on a strict
+// 0.2 s beat while `impact()` and the rain bed fill the gaps with brass strikes
+// at a rate the launcher itself sets — so the ear hears one instrument with a
+// periodic body and a stochastic skin, which is exactly a pellet drum's
+// signature. It is the same relationship the board's two routes have to the
+// centripetal condition: nobody designed it, it fell out of the parts.
+//
+// Recorded here because a future builder retuning the impact budget or the
+// launch envelope will change it without meaning to, and should at least know
+// what they are trading away.
+
 export const CUE_FAMILY = {
   heso: 'reward',
   tulip: 'reward',

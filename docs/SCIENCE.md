@@ -463,7 +463,121 @@ automatically honest — it is merely *checkable*, and only if somebody checks.
 
 ---
 
-## 7. Known gaps
+## 7. The run
+
+Everything in this section is a DESIGN choice measured with an instrument, not a fact about
+pachinko. It is marked that way deliberately: the roguelike layer is the first part of this
+project with no real-world referent at all, and it must not borrow the credibility of the
+sections above it.
+
+### The one law that had to survive
+
+A score is the most dangerous thing this project has ever added. Scores want to be fed back as
+difficulty, and the moment one is, "same seed, same physics, same odds" stops being true and the
+whole exhibit is a lie with a slider on it.
+
+So the Run **observes** the Machine and never touches it — the same relationship the dopamine
+model has. The Machine emits what happened; the Run decides what it was worth; the renderer and
+synth decide how loud to be about it. `test/run.test.js` pins it three ways: the Run may expose no
+presentation-shaped member, the Machine may expose no run-shaped member, and two Runs fed
+identical event batches must score identically regardless of the machine state around them.
+
+`test/varnish.test.js` passes unchanged, which is the actual proof.
+
+### The difficulty curve, and four wrong guesses
+
+The brief was: much harder at the start, and past a threshold of unlocks, increasingly easy to
+reach absurd scores. That is a claim about two curves crossing, and every attempt to get them to
+cross by intuition failed.
+
+| attempt | quota growth | picks/floor | result |
+|---|---|---|---|
+| 1 | ×1.72 | 1 | dead by floor 5, no crossover |
+| 2 | ×1.40 | 1 | dead by floor 5, no crossover |
+| 3 | ×1.22 | 1 | dead by floor 4, no crossover |
+| 4 | ×1.30 | rising with depth | crossover at floor 8 |
+
+The measurement that explained it is `node tools/run-sim.js --power`: play a fixed 160-ball floor
+with *k* parts fitted and an unreachable quota, and read the mean score.
+
+| parts | mean floor score | ×prev | ×stock |
+|---|---|---|---|
+| 0 | 4,529 | — | 1.00× |
+| 1 | 5,917 | 1.31 | 1.31× |
+| 3 | 9,604 | 1.27 | 2.12× |
+| 6 | 21,655 | 1.43 | 4.78× |
+| 10 | 69,985 | 1.43 | 15.45× |
+
+**A part is worth ×1.30.** I had assumed ×1.25 while setting the growth ratio to 1.72 and then
+1.40, and both of those make every floor strictly worse than the last, *forever*, at any quota
+base — one part a floor against a geometric wall is two straight lines on a log plot, and lowering
+the ratio only moves where the parallel lines sit. No amount of retuning a constant fixes a shape.
+
+What fixes it is `picksFor()`: the number of parts dealt RISES with depth (1, then 2 from floor 3,
+then 3 from floor 6). The player's power becomes geometric in the cumulative pick count, which is
+quadratic in the floor number, and a quadratic exponent beats a linear one eventually.
+
+### "Hard" is a margin, not a death rate
+
+The second correction. Floor clear rates **compound**: four floors at 50% means six per cent of
+runs ever see floor 5. A brutal early failure rate does not produce a hard game, it produces a
+game nobody sees past the second screen — which is why the tool's own target band for the floor-1
+clear rate was rewritten from 35–55% to 60–75% mid-build. It now measures 72%.
+
+The early difficulty lives in the COST instead. Measured cost-to-clear as a fraction of the ball
+allowance falls **65% at floor 1 to 4% at floor 12**, and floors 2–5 routinely cost more than the
+whole allowance because BALL RETURN refunds are stretching the tray. Floor 1 is a knife fight you
+usually survive; floor 12 is a formality you score enormously on.
+
+Note that score ÷ quota is a **worthless** metric here and the first version of the tool printed
+it anyway: a floor ends the instant its quota is met, so a cleared floor's ratio is pinned just
+above 1.00 by construction and every row reads "1.00×" whether it was a scrape or a rout.
+
+### The clock is launches, not the tray
+
+A pachinko tray refills constantly out of the machine's own pockets. An early build read the
+floor's remaining balls straight off the machine's token balance, on the reasonable grounds that
+the machine already maintains that number correctly — it does, it just does not maintain the
+number a run needs. Measured, floor 8 was taking **746% of its stated allowance** to clear. A
+"160-ball floor" was a twelve-hundred-ball grind and the word "allowance" on the HUD was a lie.
+
+Balls have to be a clock or they are nothing. The clock is launches; a foul refunds one, because
+the machine refunded the token too. The connection between the tray and the clock is now a PART
+(BALL RETURN), and stacking it to full is a decision the player makes on purpose.
+
+### The board holds six cups, and that is a measurement too
+
+Bucket sites are hand-placed and every hand-placed number in this project has been wrong at least
+once. The first set was placed by eye across the lower field; every one failed the wedge sweep,
+because the two powered tulips sit at (0.121, 0.345) and (0.319, 0.345) — the exact middle of
+where "the lower field" intuitively looks empty.
+
+A seventh site at the upper-LEFT flank survived every geometry check and then scored **zero across
+16 full floors and 126 bucket entries**. Not rarely: never. The reason is the board's own
+asymmetry, which is the emergent route split doing what it does — a right-route ball rides the
+outer wall down the far side, and a left-route ball falls inward at the threshold near
+(0.156, 0.071) and rains down the MIDDLE. Nothing delivers a ball to the upper-left flank. So the
+board ships with six cups, and the per-site score multipliers gently invert the measured arrival
+spread (eastDeep 33%, eastHigh 21%, westLow 17%, centre 16%, eastLow 8%, westDeep 6%) so a starved
+mouth is still worth drafting.
+
+Two instruments answer two different questions and neither pretends to answer the other's:
+`blockedPockets` in `tools/lib/pinch.js` asks whether a wall stands over the mouth, and refuses to
+guess at connectivity — an earlier flood-fill version reported the two stock buckets as
+unreachable, because a 4 mm grid cannot represent the 1 mm clearance of a 13 mm mouth and returns
+noise shaped like an answer. `run-sim --sites` fires actual balls, which is the only honest way to
+ask whether one ever arrives.
+
+### The economy moved, and the calibration says by how much
+
+Adding two paying pockets to the stock board changed the machine's return. Re-measured after the
+roguelike: amadeji **124.4%**, standard **86.8%**, loose **91.6%** (4 × 6000 balls), all inside the
+1-hour type-test band of 33.3–220%. The gentle class rose from 82.6% because two buckets now pay a
+ball each — a real change to a real economy, reported rather than hidden.
+
+---
+
+## 8. Known gaps
 
 Named so they are invitations rather than omissions.
 

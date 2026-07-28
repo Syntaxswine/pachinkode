@@ -1,8 +1,31 @@
 # PACHINKODE
 
-**A pachinko machine built to real dimensions, with a switch on its own dopamine engine.**
+**A pachinko machine built to real dimensions, with a switch on its own dopamine engine — and
+twelve floors of it to get through.**
 
 ▶ **[Play it](https://syntaxswine.github.io/pachinkode/)** — no install, no build step, no dependencies.
+
+---
+
+## The run
+
+Pick a cabinet. Each floor sets a **quota** and hands you a tray of balls; make the quota before
+the tray runs out and the **back room** deals you parts — another bucket, wider mouths, a heavier
+chain, or the life nails bent another quarter-millimetre past legal. Then the next floor, which
+wants thirty per cent more.
+
+Floor 1 is a knife fight: measured, it costs **65% of the tray** to clear. Floor 12 costs **4%**,
+because by then the parts have compounded past the wall and the machine is coming apart in your
+favour. Clearing twelve **banks the win** and the floors keep coming — OVERTIME has no ceiling,
+and the auto-player reaches floor 52 against a billion-point quota before the wall catches up.
+
+Six cabinets unlock as you go, and every one is a real class of Japanese machine: 街台, 一発台,
+羽根物, 権利物, デジパチ, and finally 裏物 — the back-room machines with unauthorised ROMs, fitted
+with every illegal part this project's documentation spends its time explaining is illegal. That
+is the joke the whole ladder walks toward: the power fantasy turns out to be becoming the crooked
+operator the honest machine was built to expose.
+
+**FREE PLAY** is still there, unchanged: no quota, no clock, the original exhibit.
 
 ---
 
@@ -44,9 +67,11 @@ of 1985, appendix 4 — so these are not estimates:
   kakuhen probability swing at **10×**, and a jackpot at **1500 balls**. All regulation.
 - The economy is calibrated against the real type-test bands (1 h: 33–220%, 4 h: 40–150%,
   10 h: 50–133%) by `tools/calibrate.js`, which measures rather than asserts. The gentle machine
-  returns **82.6% ± 16.3%** over eight runs of 24 000 balls (the workhorse spec sits at 71.3%,
-  the loose one at 102.3%). That spread is not sloppiness — it is why the regulation constrains
-  variance and not just the mean.
+  returns **124.4%** over four runs of 6 000 balls (the workhorse spec sits at 86.8%, the loose one
+  at 91.6%) — all inside the 1-hour band. The gentle figure rose from 82.6% when the roguelike
+  added two paying buckets to the stock board, which is a real change to a real economy and is
+  reported rather than hidden. That spread is not sloppiness either — it is why the regulation
+  constrains variance and not just the mean.
 
 Nothing is scripted. There is no code path that nudges a ball toward a pocket. If it goes in, it
 went in.
@@ -163,17 +188,29 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 48 tests: physics, determinism, varnish law, value learning,
+npm test                        # 75 tests: physics, determinism, varnish law, value learning,
                                 #   the pull, the fire-rate contracts, the Shepard illusion,
-                                #   and the two conditioning laws (a reward cue cannot fire
-                                #   without the ledger moving; the fanfare cannot cost you time)
+                                #   the two conditioning laws, and the run — including that a
+                                #   Run may expose no presentation surface and a Machine may
+                                #   expose no run-shaped member at all
 node tools/board-audit.js       # find ball traps in the geometry before they find your statistics
 node tools/calibrate.js         # measure RTP against the real regulatory bands
 node tools/headless.js --sweep  # dial sweep: where every ball ends up, per dial position
 node tools/headless.js --threshold   # locate the route boundary, check it against the closed form
 node tools/headless.js --foulcurve   # measure the solo-shot foul cliff the topbar reads
 node tools/ramp-experiment.js   # run the Fiorillo/Niv dopamine argument on this machine
+node tools/loadout-audit.js     # the wedge sweep across EVERY board a run can build (a gate)
+node tools/run-sim.js --curve   # play whole runs; print the difficulty curve and its crossover
+node tools/run-sim.js --power   # what a part is actually worth, measured
+node tools/run-sim.js --sites   # per-bucket entry counts — the real reachability answer
 ```
+
+`loadout-audit.js` is the one instrument here that is a **gate** rather than a report, and it
+earned that on its first run. The board is now a function of the loadout, which means the number
+of reachable playfields is the product of every widening step, every bucket count and every
+cabinet's starting parts — a player will stand in front of a board no human ever looked at. The
+very first sweep found a west bucket's wall converging on the launch rail at 11.1 mm: a permanent
+trap, on a board that would have shipped.
 
 `board-audit.js` earned its place. A pachinko board's characteristic failure is the **wedge** —
 two surfaces whose clear span is wider than nothing and narrower than a ball. Every ball that
@@ -190,6 +227,9 @@ the two keystones. Both are pre-wired and neither is built, on purpose:
 - **The conditioning ledger.** Every sound declares a cue family and stamps itself when it
   sounds; nothing reads the log yet. Wire a consumer and the machine's own conditioning becomes
   measurable — then it can hand you a receipt for it.
+- **The run's own seed.** A Run is fully reproducible from one integer — the offers, the floors,
+  all of it — and nothing surfaces that integer or lets you type one in. Daily runs and shared
+  seeds are one text field away.
 
 The game proves it is honest about your money. It does not yet prove it is honest about what it
 taught you. That is the whole of the second keystone.

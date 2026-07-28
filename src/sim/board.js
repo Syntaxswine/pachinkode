@@ -40,38 +40,10 @@
 
 import { World, makeBall, MAT, BALL_R } from './world.js'
 import { closestOnSegment } from './vec.js'
+import { BOARD } from './board-consts.js'
+import { baseLoadout, BUCKET_SITES } from './loadout.js'
 
-// Regulated dimensions, from NPSC Rule No. 4 of 1985, appendix 4. The playfield
-// must fit inside a 500 mm square and must contain a 300 mm circle; 440 × 490 mm
-// with a 412 mm rail circle satisfies both. Pocket mouths are capped by law and
-// those caps are tight against an 11 mm ball — a closed prize pocket may be no
-// more than 13 mm across, which is two millimetres of margin.
-export const BOARD = {
-  w: 0.440,
-  h: 0.490,
-  // Render-only strip below the playfield holding the launcher cutaway. Not part
-  // of the simulated world — no ball ever enters it — but the mechanism it shows
-  // is real state, read straight off the Machine.
-  cabinetH: 0.086,
-  rail: { cx: 0.220, cy: 0.246, r: 0.206, gap: 0.0200 },
-  railStart: 130,      // deg — where the ball enters the channel, bottom-left
-  railInnerEnd: 250,   // deg — the threshold. See the header note.
-  railOuterEnd: 352,   // deg — the outer channel wall runs on round to here
-  returnRubber: 337,   // deg — the return wedge. See buildRail().
-  bowlGap: [78, 102],  // deg — the out hole
-
-  // Regulated mouth widths (metres).
-  mouthClosed: 0.013,  // prize pocket / gate, maximum
-  mouthTulip: 0.050,   // powered tulip when open, maximum 0.055
-  mouthAttacker: 0.070, // attacker when open, legal band 0.055–0.135
-
-  // The heso gap: the clear span between the two "life nails" above the start
-  // pocket. Real boards run 11.25–12.50 mm against an 11.00 mm ball, adjusted in
-  // 0.25 mm steps with plate gauges. Half a millimetre here is the difference
-  // between a parlour making money and losing it. This is the single most
-  // sensitive number in the entire simulation, and it is *supposed* to be.
-  hesoGap: 0.0125
-}
+export { BOARD }
 
 const D2R = Math.PI / 180
 const R = BOARD.rail
@@ -94,15 +66,32 @@ export const CLEAR_R = R.r - R.gap - BALL_R - 0.003   // = 0.1775 m
 const px = (deg, rad) => R.cx + Math.cos(deg * D2R) * rad
 const py = (deg, rad) => R.cy + Math.sin(deg * D2R) * rad
 
-export function buildBoard () {
+/**
+ * Build a playfield.
+ *
+ * `loadout` describes what is bolted to it — see loadout.js. Called with
+ * nothing it produces the stock machine, which is what every tool and test that
+ * predates the roguelike still expects.
+ *
+ * The order below is load-bearing and always has been: furniture goes down
+ * first, and the wedge sweep runs LAST, over everything. Parts multiply the
+ * number of possible boards past what anyone can inspect, so the sweep is no
+ * longer a safety net — it is the only reason an arbitrary loadout is safe to
+ * hand a player at all.
+ */
+export function buildBoard (loadout = baseLoadout()) {
   const world = new World({ w: BOARD.w, h: BOARD.h })
-  const parts = { nails: [], tulips: [], rotors: [], sensors: {}, attacker: null, housing: null }
+  const parts = {
+    nails: [], tulips: [], rotors: [], sensors: {}, attacker: null, housing: null,
+    buckets: [], loadout
+  }
 
   buildRail(world)
-  buildHousing(world, parts)
-  buildNailField(world, parts)
-  buildFurniture(world, parts)
-  buildPockets(world, parts)
+  buildHousing(world, parts, loadout)
+  buildNailField(world, parts, loadout)
+  buildFurniture(world, parts, loadout)
+  buildPockets(world, parts, loadout)
+  buildBuckets(world, parts, loadout)
   parts.wedges = clearWedges(world, parts)
 
   world.markDirty()
@@ -390,7 +379,7 @@ export function thresholdCrestSpeed () {
 
 // --- the centre housing ---------------------------------------------------
 
-function buildHousing (world, parts) {
+function buildHousing (world, parts, L) {
   // The housing is gabled, not flat-topped. A flat roof is a shelf, and a shelf
   // in a pachinko machine is a ball trap — the first build parked forty-eight
   // balls up here per run. Real centre housings are domed or peaked for exactly
@@ -421,8 +410,14 @@ function buildHousing (world, parts) {
   // full 13 mm they swallowed 29% of every ball put on the board, which made the
   // stage route — and therefore the start pocket — about three times as generous
   // as a real machine's base rate. 11.7 mm leaves 0.7 mm of clearance per side.
+  //
+  // Since the roguelike this is a loadout dimension: WIDER WARPS opens it in
+  // 2.8 mm steps. The roof spans are carved around the mouth at build time, so
+  // widening genuinely moves brass rather than just widening a sensor — a
+  // sensor wider than its hole would score balls that bounced off the roof.
   const warpLx = 0.163, warpRx = 0.277
-  const hw = clearHalf(0.0117)
+  const warpMouth = L.warpMouth
+  const hw = clearHalf(warpMouth)
   const roofSpan = (from, to) => {
     const N = 14
     for (let i = 0; i < N; i++) {
@@ -454,8 +449,8 @@ function buildHousing (world, parts) {
   // out right above the heso — enormously improving its odds. A designed shortcut
   // that feels like luck; the board's clearest piece of manufactured near-agency,
   // so it stays. machine.js re-spawns the ball on the stage.
-  parts.sensors.warpL = world.addSensor('warp', warpLx, roofY(warpLx) + 0.004, BOARD.mouthClosed, 0.012, 'warpL')
-  parts.sensors.warpR = world.addSensor('warp', warpRx, roofYR(warpRx) + 0.004, BOARD.mouthClosed, 0.012, 'warpR')
+  parts.sensors.warpL = world.addSensor('warp', warpLx, roofY(warpLx) + 0.004, warpMouth, 0.012, 'warpL')
+  parts.sensors.warpR = world.addSensor('warp', warpRx, roofYR(warpRx) + 0.004, warpMouth, 0.012, 'warpR')
   // Where the stage spits a warped ball back out.
   parts.stage = { x: 0.220, y: 0.292, halfWidth: 0.030 }
 }
@@ -478,7 +473,7 @@ function roundedRectPoints (x0, y0, x1, y1, r, seg) {
 
 // --- the nail field -------------------------------------------------------
 
-function buildNailField (world, parts) {
+function buildNailField (world, parts, L) {
   const { housing } = parts
   // Reported nail counts vary widely — roughly 100 on modern LCD-dominated boards,
   // 500+ on early machines, with ~200 a commonly quoted modern figure. There is no
@@ -529,7 +524,14 @@ function buildNailField (world, parts) {
   // Agency ended that tolerance in the 2015–16 crackdown and operators have been
   // referred for prosecution since. Worth knowing before a future builder
   // implements nail bending as a player verb.
-  const lnx = BOARD.hesoGap / 2 + NAIL_R
+  //
+  // `L.hesoGap` is the clear span the loadout asks for. At stock it is the
+  // regulated 12.5 mm; BEND THE LIFE NAILS opens it in the same 1.25 mm steps a
+  // technician's plate gauge would. The nails themselves do not move in the
+  // renderer's sense — they are placed here, once, at build time — so a run
+  // that has bent them is a genuinely different board, not a modifier applied
+  // to collision after the fact.
+  const lnx = L.hesoGap / 2 + NAIL_R
   parts.lifeNails = [
     world.addNail(0.220 - lnx, 0.316, NAIL_R),
     world.addNail(0.220 + lnx, 0.316, NAIL_R)
@@ -553,7 +555,7 @@ function buildNailField (world, parts) {
 
 // --- windmills, tulips ----------------------------------------------------
 
-function buildFurniture (world, parts) {
+function buildFurniture (world, parts, L) {
   // Windmills (風車, kazaguruma). Brass axle, same hardness spec as the nails.
   parts.rotors.push(world.addRotor(0.082, 0.238, 0.0225, 4, 0))
   parts.rotors.push(world.addRotor(0.358, 0.238, 0.0225, 4, 0))
@@ -567,18 +569,25 @@ function buildFurniture (world, parts) {
   // one ball diameter. That is an infallible trap, and it caught a third of
   // every ball on the board. The nail sweep cannot help here: you cannot cull a
   // wall. Keep large furniture well inboard, and run tools/board-audit.js.
-  parts.tulips.push(makeTulip(world, 'tulipL', px(135, 0.140), py(135, 0.140)))
-  parts.tulips.push(makeTulip(world, 'tulipR', px(45, 0.140), py(45, 0.140)))
+  //
+  // STUCK TULIPS wires them open at build time and leaves them there. It is the
+  // one part that changes where EVERY ball on the board ends up rather than
+  // adding another place for a few of them to stop — two fifty-millimetre
+  // mouths in the middle of the scatter field are a different playfield, not a
+  // better one, and the wedge sweep below sees them in their open pose because
+  // that is the pose they will spend the run in.
+  parts.tulips.push(makeTulip(world, 'tulipL', px(135, 0.140), py(135, 0.140), L))
+  parts.tulips.push(makeTulip(world, 'tulipR', px(45, 0.140), py(45, 0.140), L))
 }
 
-function makeTulip (world, id, x, y) {
+function makeTulip (world, id, x, y, L) {
   // Closed, the clear mouth is a hair over one ball wide, so a closed tulip
   // takes balls only rarely. Open, it reaches 50 mm — our choice, inside the
   // regulated 55 mm ceiling.
-  const halfMouth = clearHalf(0.0113, 0.0018)
+  const halfMouth = clearHalf(L.tulipClosedMouth, 0.0018)
   const wingLen = 0.024
-  const tulip = { id, x, y, open: false, t: 0, halfMouth, wingLen }
-  tulip.maxSpread = Math.asin(Math.min(1, (BOARD.mouthTulip / 2 - halfMouth) / wingLen))
+  const tulip = { id, x, y, open: !!L.stickyTulips, sticky: !!L.stickyTulips, t: 0, halfMouth, wingLen }
+  tulip.maxSpread = Math.asin(Math.min(1, (L.tulipMouth / 2 - halfMouth) / wingLen))
   tulip.segL = world.addSegment(x - halfMouth, y, x - halfMouth, y - wingLen, 0.0018, MAT.wall, id + '-L')
   tulip.segR = world.addSegment(x + halfMouth, y, x + halfMouth, y - wingLen, 0.0018, MAT.wall, id + '-R')
   tulip.segL.dynamic = tulip.segR.dynamic = true      // wings move; keep out of the static grid
@@ -591,6 +600,10 @@ function makeTulip (world, id, x, y) {
   world.addSegment(x + halfMouth, y, x + halfMouth, y + d, 0.0018, MAT.wall, id + '-cupR')
   world.addSegment(x - halfMouth, y + d, x + halfMouth, y + d, 0.0018, MAT.wall, id + '-cupB')
   tulip.sensor = world.addSensor('tulip', x, y + d * 0.6, halfMouth * 1.6, 0.010, id)
+  // Snap the wings to their resting pose before the wedge sweep runs, so the
+  // sweep audits the geometry the run will actually be played on. `applyTulip`
+  // is a first-order chase whose rate clamps at 1, so dt = 1 lands exactly on
+  // the target rather than approaching it.
   applyTulip(tulip, 1)
   return tulip
 }
@@ -612,7 +625,7 @@ export function applyTulip (tulip, dt) {
 
 // --- pockets --------------------------------------------------------------
 
-function buildPockets (world, parts) {
+function buildPockets (world, parts, L) {
   // The start pocket — 始動口 (shidōguchi), universally called ヘソ, "the navel".
   // Landing here does NOT pay meaningfully; it triggers the digital lottery. The
   // gap between "the ball went in" and "you won" is the single most important
@@ -669,6 +682,64 @@ function buildPockets (world, parts) {
   const fa = BOARD.railStart - 2
   parts.sensors.foul = world.addSensor('foul', px(fa, R.r - R.gap / 2), py(fa, R.r - R.gap / 2),
     0.014, 0.014, 'foul')
+}
+
+// --- buckets --------------------------------------------------------------
+
+/**
+ * Scoring buckets: the Peggle end of this machine.
+ *
+ * A bucket is a cup with a sensor in it. Structurally it is the heso with the
+ * lottery taken out — a ball that lands in one is worth POINTS, immediately,
+ * with no verdict in between. That contrast is the reason the roguelike layer
+ * belongs on this particular board rather than fighting it: the whole original
+ * argument was that the start pocket does not pay you, and now there are seven
+ * mouths on the field that visibly do, so the player can feel the difference
+ * between the honest prize and the lottery ticket in the same session.
+ *
+ * ── the three things that will kill you here ──
+ *
+ * 1. A CUP MUST BE A CUP. A bare sensor rectangle in open space lets balls
+ *    stroll in from the side, and narrowing the mouth then changes nothing at
+ *    all — which is exactly what the tulips' first calibration run showed. Two
+ *    walls and a floor, every time.
+ *
+ * 2. THE FLOOR MUST BE DEEP ENOUGH. The sensor sits mid-cup; if the cup is
+ *    shallower than a ball diameter the ball rests with its equator above the
+ *    rim and can be knocked out by the next one, which reads as a bucket that
+ *    randomly refuses to score. Depth is 16 mm against an 11 mm ball.
+ *
+ * 3. THE RIM IS AN UPWARD-FACING SURFACE. Every one of those on this board has
+ *    to shed (see buildHousing). The walls are 2.2 mm segments — capsules, so
+ *    the rim is a cylinder, and a ball cannot balance on a cylinder for the
+ *    same reason it cannot balance on a nail. Do not be tempted to cap them
+ *    with a flat plate.
+ */
+function buildBuckets (world, parts, L) {
+  const mouth = L.bucketMouth
+  const hw = clearHalf(mouth, 0.0018)
+  const depth = 0.016
+
+  for (const b of L.buckets) {
+    const site = BUCKET_SITES[b.site]
+    if (!site) continue
+    const { x, y } = site
+    // Sited furniture must stay inboard of the launch channel, the same rule
+    // that put the tulips at radius 0.140 instead of 0.160. A bucket whose
+    // outer wall crosses CLEAR_R makes a converging gap against the rail, and a
+    // converging gap passes through exactly one ball diameter somewhere along
+    // its length. That is an infallible trap and no sweep can remove a wall.
+    if (Math.hypot(x - R.cx, y - R.cy) + hw > CLEAR_R) {
+      throw new Error(`bucket site "${b.site}" at (${x}, ${y}) fouls the launch channel ` +
+        `at mouth ${(mouth * 1000).toFixed(1)} mm`)
+    }
+    const id = 'bucket-' + b.site
+    world.addSegment(x - hw, y, x - hw, y + depth, 0.0018, MAT.wall, id + '-L')
+    world.addSegment(x + hw, y, x + hw, y + depth, 0.0018, MAT.wall, id + '-R')
+    world.addSegment(x - hw, y + depth, x + hw, y + depth, 0.0018, MAT.wall, id + '-B')
+    const sensor = world.addSensor('bucket', x, y + depth * 0.6, hw * 1.6, 0.010, b.site)
+    parts.buckets.push({ site: b.site, x, y, hw, depth, value: b.value, sensor })
+  }
 }
 
 /** Open/close the attacker gate. */

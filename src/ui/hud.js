@@ -18,8 +18,18 @@ export class Hud {
   constructor (el) {
     this.el = el
     this.el.innerHTML = `
+      <div class="sect" id="runbox" style="display:none">
+        <div class="k" id="rFloor">FLOOR 1</div>
+        <div class="q"><span id="rScore">0</span> <span style="color:var(--dim);font-size:12px">/ <span id="rQuota">0</span></span></div>
+        <div class="qbar"><i id="rBar" style="width:0%"></i></div>
+        <div class="stat"><span>balls left</span><span id="rBalls">0</span></div>
+        <div class="stat"><span>chain</span><span id="rChain">—</span></div>
+        <div class="stat"><span>run total</span><span id="rTotal">0</span></div>
+        <div class="tiny" id="rParts"></div>
+      </div>
+
       <div class="sect">
-        <div class="k">TOKENS</div>
+        <div class="k" id="kTokens">TOKENS</div>
         <div class="big" id="hTokens">0</div>
         <div class="stat"><span>in play</span><span id="hBalls">0</span></div>
       </div>
@@ -82,7 +92,9 @@ export class Hud {
         <div class="tiny">Physics, odds and payouts are identical at every setting.
           Press <b>V</b> to toggle.</div>
       </div>`
-    for (const id of ['hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
+    for (const id of ['runbox', 'kTokens', 'rFloor', 'rScore', 'rQuota', 'rBar', 'rBalls',
+      'rChain', 'rTotal', 'rParts',
+      'hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
       'hDial', 'hPull', 'hRoute', 'hRate', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
       'hOdds', 'hKoOdds', 'hSpins', 'hHolds', 'hJack', 'hKo', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
       'hVal', 'mVal', 'hMot', 'mMot', 'hDiss', 'hCeleb', 'hDeserved', 'hLdw', 'hVarn']) {
@@ -91,7 +103,28 @@ export class Hud {
     this.threshold = thresholdCrestSpeed()
   }
 
-  update (m, dop, varnish) {
+  update (m, dop, varnish, run = null) {
+    // The run box, when there is a run. In FREE PLAY it is absent entirely
+    // rather than showing zeroes — a quota of nothing is not information.
+    this.runbox.style.display = run ? '' : 'none'
+    this.kTokens.textContent = run ? 'THE TRAY' : 'TOKENS'
+    if (run) {
+      const over = run.floor > 12
+      this.rFloor.textContent = over ? `OVERTIME ${run.floor - 12}` : `FLOOR ${run.floor} OF 12`
+      this.rScore.textContent = Math.round(run.floorScore).toLocaleString('en-US')
+      this.rQuota.textContent = Math.round(run.quota).toLocaleString('en-US')
+      this.rBar.style.width = (run.progress * 100).toFixed(1) + '%'
+      this.rBalls.textContent = Math.max(0, run.ballsLeft)
+      this.rChain.textContent = run.chain > 0 ? `${run.chain} · ×${run.mult.toFixed(1)}` : '—'
+      this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')
+      // Every part fitted, named. A roguelike whose build is invisible is a
+      // roguelike where the player cannot reason about the next pick.
+      const counts = {}
+      for (const id of run.loadout.parts) counts[id] = (counts[id] || 0) + 1
+      this.rParts.textContent = Object.entries(counts)
+        .map(([id, n]) => (n > 1 ? `${id}×${n}` : id)).join(' · ') || 'stock board'
+    }
+
     this.hTokens.textContent = m.tokens
     this.hBalls.textContent = m.world.balls.length
     this.hSpent.textContent = m.spent

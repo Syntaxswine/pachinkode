@@ -15,7 +15,7 @@
 // machine learns, and a monotonically dimming celebration is the opposite of
 // what a flash is for. The measured signal lives in the hue and the needle.)
 
-import { framePalette, trailColour, hsl } from './palette.js'
+import { framePalette, trailColour, hsl, scoreColour, scoreTier } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 
 const TAU = Math.PI * 2
@@ -31,6 +31,9 @@ export class Renderer {
     this.shake = 0
     this.lampPulse = 0         // heso burst on the frame lamps
     this.pulse = 0             // the reward wash — see rewardPulse()
+    this.scorePops = []        // score numerals — the RUN's claim, not the ledger's
+    this.bucketFlare = new Map()  // site → 0..1, decays; pure lacquer
+    this.bucketTier = new Map()   // site → last score tier, for its rim colour
     this._t = 0
     this._shownTokens = null   // the counter's displayed value, easing to truth
     this._tokGlow = 0
@@ -105,7 +108,13 @@ export class Renderer {
     this.pulse = Math.min(1, this.pulse + w * (1 - this.pulse * 0.55))
   }
 
-  draw (machine, dop, varnish, dt) {
+  /** Light a bucket up. `tier` is where its score sat on the ramp, 0..1. */
+  bucketHit (site, tier = 0) {
+    this.bucketFlare.set(site, 1)
+    this.bucketTier.set(site, tier)
+  }
+
+  draw (machine, dop, varnish, dt, run = null) {
     const ctx = this.ctx
     const P = framePalette(dop, varnish)
     const w = this.cssW, h = this.cssH
@@ -131,10 +140,20 @@ export class Renderer {
     this.tulips(ctx, P, machine)
     this.attacker(ctx, P, machine)
     this.pockets(ctx, P, machine, dop)
+    // Buckets decay on the frame clock, before they are drawn, so a site that
+    // scored this frame renders at full flare rather than one frame stale.
+    for (const [k, v] of this.bucketFlare) {
+      const n = v - dt / 0.55
+      if (n <= 0) this.bucketFlare.delete(k); else this.bucketFlare.set(k, n)
+    }
+    this.buckets(ctx, P, machine)
     this.trailsAndBalls(ctx, P, machine, dop, dt)
     this.flashLayer(ctx, P, dt)
     this.lamps(ctx, P, machine, dop, dt)
     this.popupLayer(ctx, P, dt)
+    this.scorePopLayer(ctx, P, dt)
+    this.chainMeter(ctx, P, run)
+    this.quotaBar(ctx, P, run)
     this.launcher(ctx, P, machine)
     // Last, and additive: the room lighting up rather than a sheet over it.
     this.rewardWash(ctx, P, w, h, dt)
@@ -504,6 +523,176 @@ export class Renderer {
       const s = m.parts.sensors[k]
       ctx.strokeStyle = hsl(P.hue - 60, P.saturation * 0.5, 0.5, 0.7)
       ctx.strokeRect(this.X(s.x - s.w / 2), this.Y(s.y - s.h / 2), this.S(s.w), this.S(s.h))
+    }
+  }
+
+  /**
+   * The scoring buckets.
+   *
+   * Drawn as lit cups rather than as holes, because that is what they are for:
+   * on a board whose entire thesis is that the start pocket does not pay you,
+   * these are the mouths that do, and the eye should be able to tell the two
+   * apart across the room. The heso is brass and small; a bucket is a rimmed
+   * cup with a light in it.
+   *
+   * `flare` is a per-site decay set by the shell when the site scores. It is
+   * the only per-bucket state the renderer keeps, and it is pure lacquer: at
+   * varnish 0 the rim stays drawn and the fill goes grey, so you can still see
+   * where the mouths are and how wide the run has made them. The information
+   * survives; the celebration does not.
+   */
+  buckets (ctx, P, m) {
+    for (const b of m.parts.buckets || []) {
+      const f = (this.bucketFlare.get(b.site) || 0)
+      const x = this.X(b.x - b.hw), y = this.Y(b.y)
+      const w = this.S(b.hw * 2), h = this.S(b.depth)
+      const t = this.bucketTier.get(b.site) || 0
+
+      // The throat, lit from below.
+      const g = ctx.createLinearGradient(0, y, 0, y + h)
+      g.addColorStop(0, hsl(P.hue, P.saturation * 0.3, 0.10, 0.9))
+      g.addColorStop(1, scoreColour(0, P.varnish, 0.45 + 0.5 * f, t))
+      ctx.fillStyle = g
+      ctx.fillRect(x, y, w, h)
+
+      // The rim: two posts and a floor, matching the real segments.
+      ctx.strokeStyle = scoreColour(0, P.varnish, 0.75 + 0.25 * f, t)
+      ctx.lineWidth = 1.4 + 2.2 * f
+      ctx.beginPath()
+      ctx.moveTo(x, y); ctx.lineTo(x, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y)
+      ctx.stroke()
+
+      // The flare itself — a bloom over the mouth, additive so it reads as
+      // light rather than as paint.
+      if (f > 0.01 && P.varnish > 0.01) {
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        const cx = x + w / 2, cy = y + h * 0.4
+        const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * (1.1 + 1.9 * f))
+        rg.addColorStop(0, scoreColour(0, P.varnish, 0.55 * f, t))
+        rg.addColorStop(1, 'hsla(0 0% 0% / 0)')
+        ctx.fillStyle = rg
+        ctx.fillRect(cx - w * 3, cy - w * 3, w * 6, w * 6)
+        ctx.restore()
+      }
+    }
+  }
+
+  /**
+   * The chain, drawn where the balls are.
+   *
+   * A combo meter belongs on the board and not in the side panel: it is the one
+   * number that changes several times a second, and the eye that is watching a
+   * ball fall cannot also be reading a panel. It is sized and coloured by how
+   * deep the chain has got — the operator's "bright lights and colours related
+   * to score points", applied to the number that most rewards being watched.
+   *
+   * It lives in the TOP-LEFT corner, under the quota bar. The first placement
+   * was centred under the housing, which is a reasonable-looking spot on an
+   * empty board and turned out to sit directly on top of the heso and its life
+   * nails — the two most important objects in the game, obscured by a readout
+   * about how well you were doing at reaching them. The corner is dead space:
+   * no nail, no pocket, no ball path.
+   */
+  chainMeter (ctx, P, run) {
+    if (!run || run.chain < 2) return
+    const t = Math.min(1, run.chain / 26)
+    const x = this.X(0.020)
+    const y = this.Y(0.040)
+    const grow = 1 + Math.min(1.1, run.chain / 18)
+    ctx.save()
+    ctx.textAlign = 'left'
+    ctx.font = `700 ${(13 * grow).toFixed(1)}px ui-monospace, monospace`
+    if (P.varnish > 0.01) {
+      ctx.shadowColor = scoreColour(0, P.varnish, 0.7, t)
+      ctx.shadowBlur = 4 + 18 * t
+    }
+    ctx.fillStyle = scoreColour(0, P.varnish, 0.95, t)
+    ctx.fillText(`×${run.mult.toFixed(1)}`, x, y)
+    ctx.shadowBlur = 0
+    ctx.font = '500 8px ui-monospace, monospace'
+    ctx.fillStyle = P.inkDim
+    ctx.fillText(`CHAIN ${run.chain}`, x, y + 11)
+    // The window closing. A bar that empties is the honest rendering of a
+    // timer, and it is the one piece of pressure in the game that the player
+    // can actually do something about in the next half-second.
+    const frac = run.chainLeft / run.loadout.comboWindow
+    const bw = this.S(0.052)
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.2, 0.28)
+    ctx.fillRect(x, y + 15, bw, 2)
+    ctx.fillStyle = scoreColour(0, P.varnish, 0.9, t)
+    ctx.fillRect(x, y + 15, bw * frac, 2)
+    ctx.restore()
+  }
+
+  /**
+   * The quota bar: the wall, drawn across the top of the board.
+   *
+   * Deliberately a bar and not a number. The player needs to know one thing at
+   * a glance — am I going to make it — and a fraction answers that faster than
+   * two six-digit figures do. The numbers are in the panel for anyone who wants
+   * them.
+   */
+  quotaBar (ctx, P, run) {
+    if (!run) return
+    const x0 = this.X(0.014), x1 = this.X(BOARD.w - 0.014)
+    const y = this.Y(0.006)
+    const p = run.progress
+    const t = scoreTier(run.quota / 10)
+    ctx.fillStyle = hsl(P.hue, P.saturation * 0.2, 0.20)
+    ctx.fillRect(x0, y, x1 - x0, 3)
+    ctx.fillStyle = p >= 1 ? scoreColour(0, P.varnish, 1, 1) : scoreColour(0, P.varnish, 0.95, t)
+    ctx.fillRect(x0, y, (x1 - x0) * p, 3)
+    // A tick where the quota sits is redundant (the bar IS the quota) but the
+    // OVERSHOOT is not: past 100% the bar stays full and the surplus is what
+    // the run is actually scored on, so it gets its own thin overlay.
+    if (p >= 1) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.fillStyle = scoreColour(0, P.varnish, 0.5, 1)
+      ctx.fillRect(x0, y - 1, x1 - x0, 5)
+      ctx.restore()
+    }
+  }
+
+  /**
+   * A score, thrown up where it was earned.
+   *
+   * Separate from `pop()` — which floats the machine's PAYOUT in balls and is
+   * ledger truth — because these are two different claims and conflating them
+   * would undo the one piece of honesty the popups were built for. A payout is
+   * what the machine gave you. A score is what the run decided that was worth.
+   * They appear together at the same pocket and they are allowed to disagree.
+   */
+  scorePop (x, y, n, chain = 1) {
+    this.scorePops.push({ x, y, n, chain, t: 0, tier: scoreTier(n) })
+  }
+
+  scorePopLayer (ctx, P, dt) {
+    for (let i = this.scorePops.length - 1; i >= 0; i--) {
+      const s = this.scorePops[i]
+      s.t += dt
+      const LIFE = 1.15
+      if (s.t > LIFE) { this.scorePops.splice(i, 1); continue }
+      const k = s.t / LIFE
+      const rise = P.varnish > 0.01 ? 34 * (1 - Math.pow(1 - k, 2.4)) : 18 * k
+      // Pop-in overshoot, then settle. Scaled by tier so a big number arrives
+      // physically bigger, not merely a different colour.
+      const pop = s.t < 0.09 ? 0.55 + 4.9 * s.t : 1
+      const size = (10 + 15 * s.tier) * (P.varnish > 0.01 ? pop : 1)
+      const a = Math.max(0, 1 - Math.pow(k, 2.6))
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.font = `700 ${size.toFixed(1)}px ui-monospace, monospace`
+      if (P.varnish > 0.01) {
+        ctx.shadowColor = scoreColour(s.n, P.varnish, 0.85 * a, s.tier)
+        ctx.shadowBlur = 6 + 26 * s.tier
+      }
+      ctx.fillStyle = P.varnish > 0.01
+        ? scoreColour(s.n, P.varnish, a, s.tier)
+        : `hsla(0 0% 86% / ${a})`
+      ctx.fillText(s.n.toLocaleString('en-US'), this.X(s.x), this.Y(s.y) - rise)
+      ctx.restore()
     }
   }
 

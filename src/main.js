@@ -12,6 +12,10 @@ import { Dopamine } from './sim/dopamine.js'
 import { Renderer } from './render/board-render.js'
 import { Synth } from './audio/synth.js'
 import { Hud } from './ui/hud.js'
+import { Run, FLOORS, quotaFor } from './sim/run.js'
+import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
+import { PART_BY_ID, countPart } from './sim/loadout.js'
+import { scoreTier } from './render/palette.js'
 
 const $ = (s) => document.querySelector(s)
 const SAVE_KEY = 'pachinkode.v1'
@@ -24,7 +28,10 @@ const state = {
   vol: { master: 0.70, impacts: 0.55, rewards: 0.80, bed: 0.35 },
   muted: false,
   tokens: 500,
-  lifetime: { spent: 0, won: 0, jackpots: 0, balls: 0 }
+  lifetime: { spent: 0, won: 0, jackpots: 0, balls: 0 },
+  // The roguelike's persistent record. Everything that survives a death lives
+  // here and nowhere else, so "what have I unlocked" has exactly one answer.
+  meta: newMeta()
 }
 
 function load () {
@@ -36,12 +43,19 @@ function load () {
   // mid-play refresh restore screen:'play' behind a title-screen DOM with a
   // null machine — Space or T then threw on nothing (review find).
   state.screen = 'title'
+  // A save written before the roguelike has no meta record. Merge rather than
+  // replace so a returning player keeps their tokens and their ledger.
+  state.meta = Object.assign(newMeta(), state.meta || {})
 }
 function save () {
   // Whitelist, for the same reason: settings persist, session state does not.
-  const { spec, rate, varnish, vol, muted, tokens, lifetime } = state
+  // `meta` is on the list and a RUN is not — a run in progress is session
+  // state, and a roguelike that silently restores one is a roguelike whose
+  // death is optional.
+  const { spec, rate, varnish, vol, muted, tokens, lifetime, meta } = state
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ spec, rate, varnish, vol, muted, tokens, lifetime }))
+    localStorage.setItem(SAVE_KEY,
+      JSON.stringify({ spec, rate, varnish, vol, muted, tokens, lifetime, meta }))
   } catch { /* private mode */ }
 }
 load()
@@ -54,6 +68,7 @@ const synth = new Synth()
 const hud = new Hud($('#panel'))
 let machine = null
 let dop = null
+let run = null                 // the roguelike layer, or null in FREE PLAY
 let firingHeld = false
 let lastT = 0
 let impactsThisFrame = 0
@@ -61,24 +76,70 @@ let bannerTimer = 0
 let lastDetent = -1
 let sliderHinted = false
 
+const interval = () => (FIRE_RATES[state.rate] || FIRE_RATES.arcade).interval
+
+/** FREE PLAY: the original exhibit. No quota, no clock, tokens on request. */
 function newSession () {
+  run = null
   machine = new Machine({
     seed: (Math.random() * 1e9) | 0,
     spec: state.spec,
     tokens: state.tokens,
-    fireInterval: (FIRE_RATES[state.rate] || FIRE_RATES.arcade).interval
+    fireInterval: interval()
   })
   dop = new Dopamine(BOARD.w, BOARD.h)
   machine.dial = 0.20
   renderer.trails.clear()
 }
 
+// ── the run ────────────────────────────────────────────────────────────────
+
+function startRun (cabKey) {
+  run = new Run(CABINETS[cabKey], (Math.random() * 1e9) | 0)
+  state.cab = cabKey
+  buildFloor()
+  save()
+}
+
+/**
+ * A fresh Machine for every floor.
+ *
+ * Not an optimisation choice — a correctness one. The board is a function of
+ * the loadout (see board.js), and a part taken in the back room is new brass in
+ * the field: nails culled differently, cups where there were none, a wider
+ * funnel over the start pocket. There is no way to mutate the old board into
+ * the new one that is not just building it again, badly.
+ *
+ * The dopamine model is rebuilt with it. That is deliberate too: its whole
+ * content is a learned map of where value lives on THIS board, and carrying it
+ * across a geometry change would have it confidently reporting the value of a
+ * lane that no longer exists.
+ */
+function buildFloor () {
+  machine = new Machine({
+    seed: (Math.random() * 1e9) | 0,
+    spec: run.cabinet.spec,
+    tokens: run.ballsLeft,
+    fireInterval: interval(),
+    loadout: run.loadout
+  })
+  dop = new Dopamine(BOARD.w, BOARD.h)
+  machine.dial = 0.20
+  renderer.trails.clear()
+  renderer.bucketFlare.clear()
+  renderer.scorePops.length = 0
+}
+
 // ── screens ────────────────────────────────────────────────────────────────
+
+const SCREENS = ['title', 'options', 'about', 'cabinets', 'backroom', 'runover']
 
 function go (name) {
   state.screen = name
-  for (const id of ['title', 'options', 'about']) $('#' + id).classList.toggle('on', id === name)
+  for (const id of SCREENS) $('#' + id).classList.toggle('on', id === name)
   $('#play').classList.toggle('on', name === 'play')
+  if (name === 'title') { syncMeta() }
+  if (name === 'cabinets') { syncCabinets() }
   if (name === 'play') {
     if (!machine) newSession()
     resize()
@@ -100,9 +161,146 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-go]')
   if (!b) return
   synth.start().then(() => synth.click())
+  // FREE PLAY from the title tears down any run in progress. Leaving one
+  // half-alive behind the free-play board was how the first build ended up
+  // scoring a quota nobody was playing for.
+  if (b.dataset.mode === 'free' && run) { run = null; newSession() }
   go(b.dataset.go)
 })
 $('#toTitle').addEventListener('click', () => go('title'))
+$('#resumeRun').addEventListener('click', () => {
+  synth.start().then(() => synth.click())
+  go(run.status === 'cleared' ? 'backroom' : 'play')
+  if (run.status === 'cleared') syncBackroom()
+})
+
+// ── the cabinet select ─────────────────────────────────────────────────────
+
+function syncMeta () {
+  // Escape leaves a run alive rather than killing it. A roguelike may not save
+  // a run to disk — that is what makes a death a death — but losing one to a
+  // mistyped key inside the same session is not integrity, it is a bug with a
+  // principle stapled to it.
+  const btn = $('#resumeRun')
+  btn.style.display = run && run.status !== 'failed' ? '' : 'none'
+  if (run && run.status !== 'failed') {
+    $('#resumeSub').textContent =
+      `${run.cabinet.label} · floor ${run.floor} · ${fmt(run.score)} banked · ` +
+      `${run.ballsLeft} balls in the tray`
+  }
+  const m = state.meta
+  $('#metaLine').textContent = m.runs
+    ? `${m.runs} run${m.runs === 1 ? '' : 's'} · best floor ${m.bestFloor} · ` +
+      `best score ${fmt(m.bestScore)} · ${fmt(m.lifetimeScore)} lifetime` +
+      `${m.wins ? ` · ${m.wins} cleared` : ''}`
+    : ''
+}
+
+const fmt = (n) => Math.round(n).toLocaleString('en-US')
+
+function syncCabinets () {
+  const host = $('#cabList')
+  host.textContent = ''
+  for (const key of CABINET_ORDER) {
+    const c = CABINETS[key]
+    const open = isUnlocked(c, state.meta)
+    const b = document.createElement('button')
+    b.className = 'cab'
+    b.disabled = !open
+    const fitted = (c.parts || []).length
+    b.innerHTML =
+      `<span class="nm">${open ? c.label : '???????'}</span>` +
+      `<span class="jp2">${open ? c.jp : '　'}</span>` +
+      `<span class="dsc">${open ? c.note : 'Locked.'}</span>` +
+      (open
+        ? `<span class="fit">quota ×${c.difficulty.toFixed(2)}` +
+          `${fitted ? ` · starts with ${fitted} part${fitted > 1 ? 's' : ''} already fitted` : ' · stock board'}</span>`
+        : `<span class="lock">${unlockText(c, state.meta)}</span>`)
+    if (open) b.addEventListener('click', () => { synth.click(); startRun(key); go('play') })
+    host.appendChild(b)
+  }
+}
+
+// ── the back room ──────────────────────────────────────────────────────────
+
+function syncBackroom () {
+  $('#brHead').textContent = run.floor > FLOORS
+    ? `OVERTIME ${run.floor - FLOORS} CLEARED`
+    : `FLOOR ${run.floor} CLEARED`
+  const left = run.picksLeft
+  $('#brSub').textContent =
+    `${fmt(run.floorScore)} against a quota of ${fmt(run.quota)}, with ` +
+    `${run.ballsLeft} ball${run.ballsLeft === 1 ? '' : 's'} still in the tray. ` +
+    `Take ${left} part${left > 1 ? 's' : ''} — the back room deals again for each one. ` +
+    `Next floor wants ${fmt(nextQuota())}.`
+  const host = $('#brOffers')
+  host.textContent = ''
+  for (const p of run.offers || []) {
+    const have = countPart(run.loadout, p.id)
+    const b = document.createElement('button')
+    b.className = 'offer'
+    b.innerHTML =
+      `<span class="nm">${p.name}</span><span class="jp2">${p.jp}</span>` +
+      `<span class="bl">${p.blurb}</span><span class="dt">${p.detail}</span>` +
+      (have ? `<span class="have">FITTED ×${have}${p.max ? ` OF ${p.max}` : ''}</span>` : '')
+    b.addEventListener('click', () => {
+      synth.click()
+      run.take(p.id)
+      afterDraft()
+    })
+    host.appendChild(b)
+  }
+}
+
+// What the next floor will ask for, AFTER whatever relief the current loadout
+// carries — so a player weighing SOFTER QUOTA can watch it work before paying
+// for it. Computed with the run's own function rather than a copy of the
+// constants: a second copy of the curve in the shell is a second curve.
+const nextQuota = () =>
+  quotaFor(run.floor + 1, run.loadout, run.cabinet.difficulty || 1)
+
+$('#brSkip').addEventListener('click', () => { synth.click(); run.skip(); afterDraft() })
+
+/** The draft moved on: either deal again, or descend. */
+function afterDraft () {
+  drainRun()
+  if (run.status === 'cleared') { syncBackroom(); return }
+  buildFloor()
+  go('play')
+  banner(run.floor > FLOORS ? `OVERTIME ${run.floor - FLOORS}` : `FLOOR ${run.floor}`,
+    `${fmt(run.quota)} to clear · ${run.ballsLeft} balls`)
+}
+
+// ── the end ────────────────────────────────────────────────────────────────
+
+function endRun () {
+  const unlocked = recordRun(state.meta, run)
+  save()
+  $('#roHead').textContent = run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
+  $('#roScore').textContent = fmt(run.score)
+  const deepest = run.floor
+  $('#roSub').textContent = run.cleared
+    ? `Cleared all ${FLOORS} floors and went ${deepest - FLOORS} deep into overtime before ` +
+      `floor ${deepest} out-ran the board — ${fmt(run.quota - run.floorScore)} short with an ` +
+      `empty tray. ${run.loadout.parts.length} parts fitted; longest chain ${run.bestChain}.`
+    : `Floor ${deepest} wanted ${fmt(run.quota)} and the tray ran out ` +
+      `${fmt(run.quota - run.floorScore)} short. ${run.loadout.parts.length} parts fitted; ` +
+      `longest chain ${run.bestChain}.`
+  const host = $('#roUnlocks')
+  host.textContent = ''
+  for (const k of unlocked) {
+    const d = document.createElement('div')
+    d.textContent = `UNLOCKED — ${CABINETS[k].label} ${CABINETS[k].jp}`
+    host.appendChild(d)
+  }
+  go('runover')
+}
+
+$('#roAgain').addEventListener('click', () => {
+  synth.click()
+  startRun(state.cab || 'floor')
+  go('play')
+})
 
 // ── options ────────────────────────────────────────────────────────────────
 
@@ -282,7 +480,7 @@ addEventListener('keydown', (e) => {
     if (e.key === 'Escape') go('title')
     return
   }
-  if (e.key === 'Escape') { go('title'); return }
+  if (e.key === 'Escape') { go('title'); return }   // a run survives in memory; see the title menu
   if (e.code === 'Space') {
     e.preventDefault()
     // Key auto-repeat re-fires keydown for as long as the bar is held; without
@@ -304,8 +502,17 @@ addEventListener('keydown', (e) => {
   if (e.key === 't' || e.key === 'T') {
     // Top up. Deliberately frictionless — this is a simulator, not a casino —
     // but every conjured token is recorded and shown, which a parlour would never do.
-    machine.addTokens(500)
-    banner('+500 CONJURED', 'noted in the ledger')
+    //
+    // Not during a RUN. The whole roguelike rests on the tray being a clock,
+    // and a key that refills the clock is not a difficulty option, it is the
+    // absence of a game. FREE PLAY is where the frictionless exhibit lives and
+    // it is one keypress from the title screen.
+    if (run) {
+      banner('NOT IN A RUN', 'the tray is the clock — FREE PLAY has no clock at all')
+    } else {
+      machine.addTokens(500)
+      banner('+500 CONJURED', 'noted in the ledger')
+    }
   }
 })
 addEventListener('keyup', (e) => {
@@ -341,13 +548,36 @@ const THRESHOLD = thresholdCrestSpeed()
 function frame (now) {
   requestAnimationFrame(frame)
   const t = now / 1000
-  let dt = Math.min(0.05, t - lastT || 0.016)
+  const dt = Math.min(0.05, t - lastT || 0.016)
   lastT = t
+  tick(dt, t)
+}
+
+/**
+ * One frame of everything, split out from the rAF callback so it can be driven
+ * by hand.
+ *
+ * This is not a stylistic refactor. A backgrounded or hidden tab throttles
+ * requestAnimationFrame to nothing, and the in-app preview pane reports
+ * `document.hidden === true` — so a browser-automation harness watching this
+ * game sees a frozen board and no way to tell a hang from a throttle. Every
+ * verification this project does through a browser (see docs/HANDOFF.md) runs
+ * through `__pachinkode.tick()` for exactly that reason: the harness supplies
+ * the clock the browser is refusing to.
+ *
+ * It takes `dt` rather than a timestamp, so a harness can also run a whole
+ * floor in a loop faster than real time.
+ */
+function tick (dt, t = lastT) {
   if (state.screen !== 'play' || !machine) return
 
   synth.frame()
   impactsThisFrame = 0
 
+  // In a run the tray IS the floor's remaining launches — see run.js. Writing
+  // it here rather than letting the Machine keep its own balance is what makes
+  // the number under the board and the number in the panel the same number.
+  if (run) machine.tokens = Math.max(0, run.ballsLeft)
   machine.firing = firingHeld && machine.tokens > 0
   machine.step(dt)
 
@@ -361,9 +591,16 @@ function frame (now) {
     lastDetent = -1
   }
 
-  // The dopamine model observes; it never acts.
+  // The dopamine model observes; it never acts. So does the run. Both are
+  // handed the SAME drained batch — the queue can only be emptied once, and
+  // whichever of them called drain() second would otherwise get nothing.
   for (const b of machine.world.balls) dop.visit(b)
-  handleEvents(machine.drain())
+  const events = machine.drain()
+  handleEvents(events)
+  if (run) {
+    run.observe(events, dt, { inFlight: machine.world.balls.length })
+    drainRun()
+  }
   dop.update(dt, { balls: machine.world.balls.length, impacts: impactsThisFrame / dt, t })
 
   // Uncertainty for the bed: the live uncertainty of the ball closest to a decision.
@@ -374,8 +611,8 @@ function frame (now) {
   synth.updateRain(impactsThisFrame / dt, state.varnish)
   synth.updateJam(machine.foulHeat, state.varnish)
 
-  renderer.draw(machine, dop, state.varnish, dt)
-  hud.update(machine, dop, state.varnish)
+  renderer.draw(machine, dop, state.varnish, dt, run)
+  hud.update(machine, dop, state.varnish, run)
   updateTopbar()
 
   if (bannerTimer > 0) {
@@ -384,6 +621,65 @@ function frame (now) {
   }
 
   state.tokens = machine.tokens
+}
+
+/**
+ * The run's own events: score, chain, floor transitions.
+ *
+ * Separate from `handleEvents` because they are a separate claim. The machine's
+ * events say what the board did; these say what the run decided it was worth,
+ * and the whole reason the roguelike does not break design law L4 is that those
+ * two never get mixed. A score is loud, coloured by magnitude, and completely
+ * absent from the simulation.
+ */
+function drainRun () {
+  for (const ev of run.drain()) {
+    switch (ev.type) {
+      case 'score': {
+        // The numeral, thrown up where it was earned, sized and coloured by
+        // how big it is. This is the operator's "numbers going up very
+        // visibly", now with four orders of magnitude to express.
+        renderer.scorePop(ev.x, ev.y, ev.n, ev.chain)
+        if (ev.site) renderer.bucketHit(ev.site, scoreTier(ev.n))
+        // Deep chains earn a kick and a lamp burst of their own — the board
+        // noticing that something sustained is happening, which is precisely
+        // what a chain is and what nothing else on the board reports.
+        if (ev.chain > 0 && ev.chain % 8 === 0) {
+          renderer.lampBurst(Math.min(1, 0.4 + ev.chain / 30))
+          renderer.kick(0.10)
+          synth.reach(state.varnish)
+        }
+        break
+      }
+
+      case 'floorCleared':
+        renderer.kick(0.6)
+        renderer.lampBurst(1)
+        synth.jackpot(0.6, state.varnish)
+        break
+
+      case 'draft':
+        // Straight to the back room. The floor is over the instant the quota
+        // falls; leaving the player firing into a decided floor would be the
+        // machine wasting their time on a result it already has.
+        machine.cancelCharge()
+        firingHeld = false
+        syncBackroom()
+        go('backroom')
+        break
+
+      case 'runFailed':
+        machine.cancelCharge()
+        firingHeld = false
+        synth.shepardStop()
+        endRun()
+        break
+
+      case 'runWon':
+        banner('十二階  TWELVE FLOORS', 'banked. now find out where it stops')
+        break
+    }
+  }
 }
 
 function handleEvents (events) {
@@ -649,7 +945,13 @@ globalThis.__pachinkode = {
   fire (on = true) { firingHeld = on },
   pull () { machine && machine.beginCharge() },
   release () { machine && machine.releaseCharge() },
-  go
+  go,
+  get run () { return run },
+  /** Drive n frames by hand. See tick() — the preview pane reports hidden. */
+  tick (n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) tick(dt, (lastT += dt)) },
+  startRun,
+  /** Rebuild the board from the run's current loadout — see buildFloor(). */
+  buildFloor () { run && buildFloor() }
 }
 
 requestAnimationFrame(frame)

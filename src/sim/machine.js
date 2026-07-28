@@ -21,6 +21,7 @@
 import { BOARD, buildBoard, launchPoint, applyTulip, applyAttacker } from './board.js'
 import { makeBall, DT } from './world.js'
 import { makeRng } from './rng.js'
+import { baseLoadout } from './loadout.js'
 
 /**
  * Machine specifications. These are real classes of Japanese machine, not
@@ -131,6 +132,11 @@ export const JITTER_COLD = 0.0035       // relative sd, fired from rest
 export const JITTER_HOT = 0.026         // relative sd, firing flat out
 export const HESO_PAY = 3               // balls returned for a start-pocket entry
 export const TULIP_PAY = 2
+// A bucket returns one ball. Deliberately small: a bucket's job is to pay
+// POINTS, and if it paid a useful number of balls as well then DEEPER TRAY and
+// ANOTHER BUCKET would be the same part. One ball is enough that a good board
+// slows its own clock without stopping it.
+export const BUCKET_PAY = 1
 const HOLD_MAX = 4                      // 保留 — the legal pending-ball queue depth
 const SPIN_TIME = 1.9                   // s, base
 const REACH_EXTRA = 2.6                 // s of extra crawl when the spin "reaches"
@@ -160,8 +166,13 @@ const KOATARI_ENTRIES = 4               // entry cap for that opening
 const FANFARE_TIME = 2.6                // s of opening sequence before the mouth
 
 export class Machine {
-  constructor ({ seed = 1, spec = 'amadeji', tokens = 500, fireInterval = LAUNCH_INTERVAL } = {}) {
-    const built = buildBoard()
+  constructor ({ seed = 1, spec = 'amadeji', tokens = 500, fireInterval = LAUNCH_INTERVAL,
+    loadout = null } = {}) {
+    // The loadout is the board's argument (see loadout.js). Defaulted here
+    // rather than required, so every tool and test written before the roguelike
+    // still builds the stock machine by asking for nothing.
+    this.loadout = loadout || baseLoadout()
+    const built = buildBoard(this.loadout)
     this.world = built.world
     this.parts = built.parts
     this.rng = makeRng(seed)
@@ -456,6 +467,20 @@ export class Machine {
           this.emit('holdOverflow', {})
         }
         break
+      case 'bucket': {
+        // A scoring bucket. It pays a ball back and it emits — the SCORE it is
+        // worth is not computed here, because scoring belongs to the run and
+        // the run is not part of the machine. See run.js. Keeping the number
+        // out of this file is what lets a Machine still be built and measured
+        // with no run at all, which is what every calibration tool does.
+        const bk = this.parts.buckets.find(b => b.site === ev.sensor)
+        this.pay(BUCKET_PAY, 'bucket')
+        this.emit('bucket', {
+          x: ev.x, y: ev.y, site: ev.sensor, value: bk ? bk.value : 1,
+          n: BUCKET_PAY, ball: ev.ball
+        })
+        break
+      }
       case 'tulip':
         this.pay(TULIP_PAY, 'tulip')
         this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor, ball: ev.ball })

@@ -127,6 +127,61 @@ export function framePalette (dop, varnish = 1) {
  */
 const TRAIL_TOP = 5.5
 
+// ── the score ramp ──────────────────────────────────────────────────────────
+//
+// A separate colour channel from everything above, and it is worth being clear
+// about why, because this file's whole argument is that colour here is solved
+// rather than chosen.
+//
+// `framePalette` codes the machine's INTERNAL STATE — arousal, prediction
+// error — and it is solved from the Valdez & Mehrabian regressions because
+// that state is an emotional claim and an emotional claim should be derived.
+// The reward wash codes a BINARY EVENT (a ball was gained) and is therefore a
+// single invariant hue, because that is how a conditioning cue works.
+//
+// This ramp codes a MAGNITUDE, which is neither. It is an instrument reading —
+// the same job as a colour scale on a map — and the right property for that is
+// monotone perceptual ordering, not derived affect. So the stops are ordered
+// hot-to-hotter and the value is log-scaled, because scores in this game span
+// four orders of magnitude between a stock floor and a maxed URAMONO one and a
+// linear ramp would spend its entire range on the first floor.
+//
+// The one thing it inherits from the rest of the file is the law: at varnish 0
+// the saturation is zero and the ramp collapses to a luminance ladder. The
+// magnitude is still legible; the spectacle is gone. Same image, no lacquer.
+const SCORE_STOPS = [
+  { h: 48, s: 0.55, l: 0.72 },   // pale brass — a small pocket
+  { h: 32, s: 0.85, l: 0.62 },   // orange
+  { h: 8, s: 0.92, l: 0.60 },   // red
+  { h: 330, s: 0.95, l: 0.64 },   // magenta
+  { h: 286, s: 0.95, l: 0.70 },   // violet
+  { h: 190, s: 1.00, l: 0.76 }    // cyan — absurd
+]
+
+/**
+ * Where a score sits on the ramp, 0..1. Logarithmic between one bucket at
+ * stock value and roughly what a maxed board pays for a single deep-chain hit.
+ */
+export function scoreTier (n) {
+  const lo = Math.log(100), hi = Math.log(60000)
+  return clamp((Math.log(Math.max(1, n)) - lo) / (hi - lo))
+}
+
+/** Colour for a score of magnitude `n`. `t` may be passed pre-computed. */
+export function scoreColour (n, varnish = 1, alpha = 1, t = null) {
+  const v = clamp(varnish)
+  const u = clamp(t === null ? scoreTier(n) : t) * (SCORE_STOPS.length - 1)
+  const i = Math.min(SCORE_STOPS.length - 2, Math.floor(u))
+  const f = u - i
+  const a = SCORE_STOPS[i], b = SCORE_STOPS[i + 1]
+  // Interpolate along the shortest arc so 330 → 286 does not swing through green.
+  let dh = b.h - a.h
+  if (dh > 180) dh -= 360
+  if (dh < -180) dh += 360
+  return hsl(a.h + dh * f, (a.s + (b.s - a.s) * f) * v,
+    a.l + (b.l - a.l) * f, alpha)
+}
+
 export function trailColour (value, confidence, varnish = 1) {
   const v = clamp(varnish)
   const t = clamp(value / TRAIL_TOP)

@@ -114,6 +114,44 @@
   #banner.on { opacity: 1; }
   #banner small { display: block; font-size: 10px; letter-spacing: .18em;
                   color: var(--dim); margin-top: 7px; }
+  /* ── the roguelike screens ──
+     Same restraint as the rest of the shell: monospace, thin rules, colour used
+     only where it carries information. The spectacle lives on the BOARD, where
+     the balls are — a menu that shouts competes with the thing worth watching. */
+  .cab { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: baseline;
+         border: 1px solid var(--faint); border-bottom: none; padding: 12px 15px;
+         background: transparent; width: 100%; text-align: left; transition: .13s; }
+  .cab:last-of-type { border-bottom: 1px solid var(--faint); }
+  .cab:hover:not([disabled]), .cab:focus-visible { border-color: var(--hot); background: #171d25; outline: none; }
+  .cab[disabled] { cursor: default; opacity: .45; }
+  .cab .nm { letter-spacing: .18em; color: #eef3f8; }
+  .cab .jp2 { color: var(--dim); letter-spacing: .3em; font-size: 11px; }
+  .cab .dsc { grid-column: 1 / -1; color: var(--dim); font-size: 10px; line-height: 1.7; letter-spacing: .03em; }
+  .cab .lock { grid-column: 1 / -1; color: var(--hot); font-size: 10px; letter-spacing: .1em; }
+  .cab .fit { grid-column: 1 / -1; color: var(--faint); font-size: 9.5px; letter-spacing: .06em; }
+
+  .offers { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .offer { border: 1px solid var(--faint); padding: 13px 14px; background: transparent;
+           text-align: left; display: flex; flex-direction: column; gap: 6px; transition: .13s; }
+  .offer:hover, .offer:focus-visible { border-color: var(--hot); background: #171d25; outline: none; }
+  .offer .nm { letter-spacing: .14em; color: #eef3f8; font-size: 12px; }
+  .offer .jp2 { color: var(--dim); letter-spacing: .28em; font-size: 10px; }
+  .offer .bl { color: var(--hot); font-size: 10.5px; line-height: 1.6; }
+  .offer .dt { color: var(--dim); font-size: 9.5px; line-height: 1.65; }
+  .offer .have { color: var(--faint); font-size: 9px; letter-spacing: .12em; }
+
+  .bigscore { font-size: clamp(34px, 9vw, 74px); letter-spacing: .04em; color: var(--hot);
+              font-variant-numeric: tabular-nums; line-height: 1.05; margin-top: 8px; }
+  .unlocks { margin-top: 18px; }
+  .unlocks div { border: 1px solid var(--hot); color: var(--hot); padding: 9px 12px;
+                 letter-spacing: .14em; font-size: 11px; margin-bottom: -1px; }
+
+  /* The run readout in the play panel. The quota is the only number here that
+     can end the run, so it gets the large type. */
+  #runbox .q { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  #runbox .qbar { height: 4px; background: #1a212a; margin: 5px 0 8px; }
+  #runbox .qbar i { display: block; height: 100%; background: var(--hot); }
+
   @media (max-width: 780px) {
     #play { flex-direction: column; }
     #panel { flex: 0 0 auto; border-left: none; border-top: 1px solid var(--faint);
@@ -132,10 +170,51 @@
     One knob. Eleven-millimetre steel. A lottery you do not control.
   </div>
   <nav class="menu">
-    <button data-go="play">PLAY<small>hold to pull · release to fire · tap for rapid shots · drag the scale to set BASE</small></button>
+    <button id="resumeRun" style="display:none">RESUME RUN<small id="resumeSub"></small></button>
+    <button data-go="cabinets">NEW RUN<small>twelve floors, a quota on each, and a back room between them</small></button>
+    <button data-go="play" data-mode="free">FREE PLAY<small>the machine on its own, no quota, no clock — abandons a run in progress</small></button>
     <button data-go="options">OPTIONS<small>sound · varnish · fire rate · machine class</small></button>
     <button data-go="about">ABOUT<small>what is real in here, and what is not</small></button>
   </nav>
+  <div class="tiny" id="metaLine" style="margin-top:22px;letter-spacing:.14em"></div>
+</section>
+
+<!-- ── cabinet select ─────────────────────────────────────────────────────── -->
+<section id="cabinets" class="screen">
+  <div class="sheet">
+    <h2>CHOOSE A CABINET</h2>
+    <p class="note">Every one of these is a real class of Japanese machine. A harder cabinet
+      raises every floor's quota — and hands you a board that is already halfway built.
+      Clearing floor twelve banks the win; the floors keep coming after it.</p>
+    <div id="cabList"></div>
+    <div class="backrow"><button data-go="title">BACK</button></div>
+  </div>
+</section>
+
+<!-- ── the back room: the draft ───────────────────────────────────────────── -->
+<section id="backroom" class="screen">
+  <div class="sheet">
+    <h2 id="brHead">THE BACK ROOM</h2>
+    <p class="note" id="brSub"></p>
+    <div id="brOffers" class="offers"></div>
+    <div class="backrow">
+      <button id="brSkip">TAKE NOTHING<small style="display:block;color:var(--dim);font-size:9px;margin-top:3px">forfeits this floor's remaining picks</small></button>
+    </div>
+  </div>
+</section>
+
+<!-- ── run over ───────────────────────────────────────────────────────────── -->
+<section id="runover" class="screen">
+  <div class="sheet" style="text-align:center">
+    <h2 id="roHead">THE RUN ENDS</h2>
+    <div class="bigscore" id="roScore">0</div>
+    <p class="note" id="roSub" style="margin:14px auto 0;max-width:56ch"></p>
+    <div id="roUnlocks" class="unlocks"></div>
+    <div class="backrow" style="justify-content:center">
+      <button id="roAgain">RUN IT AGAIN</button>
+      <button data-go="title">THE FLOOR</button>
+    </div>
+  </div>
 </section>
 
 <section id="options" class="screen">
