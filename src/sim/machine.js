@@ -6,8 +6,11 @@
 // In modern pachinko the ball landing in the heso triggers a digital spin whose
 // outcome was decided by a random number generator you never touched. Your dial,
 // your patience, your read of the nail field — all of it buys you is a higher
-// *rate* of tickets. The pachinko literature calls the resulting play "dark flow";
-// the machine calls it Tuesday.
+// *rate* of tickets. The slot-machine literature calls the resulting absorbed
+// state "dark flow" (Dixon et al., J. Gambling Studies 2017; J. Behavioural
+// Addictions 2019) — a construct coined for multiline slots, not pachinko, since
+// no dark-flow literature on pachinko exists. The mechanism transfers; the
+// citation does not, and saying so is the whole point of design law L2.
 //
 // Pachinkode does not hide this. The spin is drawn openly, the odds are printed
 // on the HUD, and the ball's arrival and the spin's verdict are rendered as two

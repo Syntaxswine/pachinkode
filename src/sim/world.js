@@ -6,9 +6,11 @@
 // at the last possible moment.
 //
 // Integration is semi-implicit (symplectic) Euler at a fixed 1200 Hz. That is
-// deliberate overkill: a ball falling the height of the board reaches ~3.2 m/s,
-// which is 2.7 mm per step against a 5.5 mm radius, so nothing can tunnel through
-// a nail even at launch speed. Contacts are resolved sequentially with a proper
+// deliberate overkill. Free fall over the board height reaches 3.10 m/s, but the
+// real worst case is the launcher at full dial, 4.20 m/s — 3.5 mm per step against
+// a 6.4 mm combined ball-plus-nail radius, so a head-on path still lands three or
+// more samples inside the collision disc and nothing can tunnel through a nail.
+// Contacts are resolved sequentially with a proper
 // normal+friction impulse pair, which is what makes a ball spin off a nail instead
 // of reflecting like light off a mirror.
 
@@ -50,12 +52,17 @@ const AIR_DRAG = 0.02                     // 1/s, linear; tiny but stops jitter 
 
 export const MAT = {
   // Restitution by surface pair. The nail figure is the good one: Sandeep et al.,
-  // Canadian Geotechnical Journal (2019), measured chrome steel spheres against a
-  // brass block at 1.74–2.43 m/s — which is exactly the speed band a pachinko ball
+  // Canadian Geotechnical Journal 58(1):35–48 (2021), measured chrome steel spheres against a
+  // brass block at 1.74–2.43 m/s — which overlaps the speed band a pachinko ball
   // strikes a nail at — and got e = 0.54, 0.53, 0.52, 0.51 across that range.
-  // Two corrections push it down slightly: their spheres were ~2 mm and restitution
-  // falls with sphere diameter, and the regulation fixes nail brass at a soft
-  // 150–230 HV, which dissipates more. Hence 0.50 rather than the measured 0.52.
+  //
+  // One correction pushes it down: their spheres were ~2 mm and restitution falls
+  // with sphere diameter, so an 11 mm ball sits below the measured figure. Hence
+  // 0.50 rather than 0.52. (The regulation fixes nail brass at 150–230 HV, and an
+  // earlier version of this comment claimed that softness as a second correction.
+  // The paper never reports its block's hardness, so there is no basis to compare
+  // — and 150–230 HV is the hard-drawn end of brass anyway, which would push COR
+  // the other way. Noted, not applied.)
   //
   // The others are generic engineering values — no pachinko-specific measurement
   // of steel on plywood or acrylic exists. They are labelled honestly rather than
@@ -64,7 +71,7 @@ export const MAT = {
   wall: { e: 0.30, mu: 0.22 },   // generic steel→board
   rail: { e: 0.28, mu: 0.10 },   // generic steel→formed rail
   vane: { e: 0.40, mu: 0.30 },   // generic; grippier, the windmill must carry balls
-  rubber: { e: 0.55, mu: 0.50 }, // the return rubber (kaeshi-gomu) at the rail's end
+  rubber: { e: 0.55, mu: 0.50 }, // the return wedge at the rail's end
   ball: { e: 0.65, mu: 0.10 }    // generic steel→steel at low speed
 }
 
@@ -500,8 +507,8 @@ export class World {
    * Broadphase for the static world.
    *
    * Both nails and wall segments go into a uniform grid. The segments matter more
-   * than they look: a finished board has ~380 of them (the rail alone is 150
-   * chords), and testing every ball against every segment on every one of 1200
+   * than they look: a finished board has ~380 of them (the rail alone is 233
+   * chords, 153 outer and 80 inner), and testing every ball against every segment on every one of 1200
    * steps per second was costing more than the rest of the simulation combined.
    * Segments are rasterised by bounding box, which is exact enough when the
    * longest one is a fraction of the board.

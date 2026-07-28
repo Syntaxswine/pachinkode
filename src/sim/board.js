@@ -44,7 +44,7 @@ export const BOARD = {
   railStart: 130,      // deg — where the ball enters the channel, bottom-left
   railInnerEnd: 250,   // deg — the threshold. See the header note.
   railOuterEnd: 352,   // deg — the outer channel wall runs on round to here
-  returnRubber: 337,   // deg — the kaeshi-gomu. See buildRail().
+  returnRubber: 337,   // deg — the return wedge. See buildRail().
   bowlGap: [78, 102],  // deg — the out hole
 
   // Regulated mouth widths (metres).
@@ -206,7 +206,7 @@ function buildRail (world) {
   arc(world, r, BOARD.railStart - 8, BOARD.railOuterEnd, MAT.rail, 'rail-outer')
   arc(world, r - gap, BOARD.railStart, BOARD.railInnerEnd, MAT.rail, 'rail-inner')
 
-  // The return rubber (返しゴム, kaeshi-gomu).
+  // The return wedge.
   //
   // Without this the machine is broken, and the reason is a nice piece of physics.
   // A ball fast enough to stay pinned to the outer wall at the threshold stays
@@ -216,10 +216,16 @@ function buildRail (world) {
   // strong shot sailing round the outside and straight down the drain, touching
   // not one nail.
   //
-  // Real machines have exactly this problem and solve it with exactly this part:
-  // a rubber block jutting inward at the top right that knocks the ball off the
-  // wall and into the field. It is the reason *migi-uchi* puts balls on the right
-  // of the board rather than in the gutter.
+  // Real boards face the same geometry and break the ball off the rail at the top
+  // right, where the 天釘 (top nails) sit — the one spot on a board a player can
+  // genuinely aim at. Pachinkode uses a rubber wedge there instead, because a
+  // deformable block gives a cleaner and more tunable release than a nail pair.
+  //
+  // An earlier version of this comment called the part 返しゴム and presented that
+  // as its real name. Two research passes over Japanese board-part references
+  // could not find any rubber component by that name, or any ゴム part at the rail
+  // top at all. The physics is measured and load-bearing; the name was not, so it
+  // is gone. `MAT.rubber` and the `return-rubber` tag are internal names only.
   // Built as a closed triangle welded to the wall, not a single fin. A bare fin
   // leaves an acute pocket on its downstream side, and an acute pocket against a
   // curved wall passes through one ball diameter somewhere — the same trap as the
@@ -284,6 +290,12 @@ function buildHousing (world, parts) {
   // directly under the release point, so a weak shot landed on it and rolled
   // straight into a warp — eighty per cent of balls at low dial. A board needs
   // scattering distance between the rail and its first big obstacle.
+  //
+  // The rule about upward-facing surfaces is not that they all shed — the stage
+  // built fifty lines below is a surface that deliberately *carries* balls, and
+  // stage performance is a marketed characteristic of real machines. The rule is
+  // that none of them may be a stable equilibrium: a ball always leaves, and
+  // never at the same instant twice.
   const x0 = 0.126, x1 = 0.314, y0 = 0.166, y1 = 0.292, rr = 0.020
   const seg = (ax, ay, bx, by) => world.addSegment(ax, ay, bx, by, SEG_R, MAT.wall, 'housing')
 
@@ -359,9 +371,11 @@ function roundedRectPoints (x0, y0, x1, y1, r, seg) {
 
 function buildNailField (world, parts) {
   const { housing } = parts
-  // Real boards carry around 200 nails (documented range roughly 150–600). The
-  // first pass here left 86 after the wedge cull, which both looked bare and
-  // gave balls too clean a run at the pockets.
+  // Reported nail counts vary widely — roughly 100 on modern LCD-dominated boards,
+  // 500+ on early machines, with ~200 a commonly quoted modern figure. There is no
+  // legal count; the statute regulates placement and material only. This field
+  // lands at 107 after the wedge cull. The first pass left 86, which both looked
+  // bare and gave balls too clean a run at the pockets.
   const pitchX = 0.0206
   const pitchY = 0.0188
 
@@ -450,7 +464,8 @@ function buildFurniture (world, parts) {
 
 function makeTulip (world, id, x, y) {
   // Closed, the clear mouth is a hair over one ball wide, so a closed tulip
-  // takes balls only rarely. Open, it reaches the regulated 50 mm.
+  // takes balls only rarely. Open, it reaches 50 mm — our choice, inside the
+  // regulated 55 mm ceiling.
   const halfMouth = clearHalf(0.0113, 0.0018)
   const wingLen = 0.024
   const tulip = { id, x, y, open: false, t: 0, halfMouth, wingLen }

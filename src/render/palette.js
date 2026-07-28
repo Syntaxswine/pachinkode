@@ -116,8 +116,9 @@ export function framePalette (dop, varnish = 1) {
  * after a few hundred balls a bright thread appears above the start pocket,
  * because the machine learned it, not because anyone drew it.
  *
- * `value` is in tokens. A start-pocket entry is worth about 12 — three paid now
- * plus nine of lottery ticket — but no cell ever reaches that, because V is the
+ * `value` is in tokens. A start-pocket entry is worth 11.7 (standard) to 21.5
+ * (loose) depending on spec — three paid now plus a lottery ticket worth far
+ * more — but no cell ever reaches that, because V is the
  * *average* return over every ball that passed through and most of them miss.
  * Measured over 3500 balls, the busiest cell in the funnel converges near 5.3.
  * Scaling to the theoretical 12 left the whole board in the cold third of the

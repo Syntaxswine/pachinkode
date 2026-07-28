@@ -76,8 +76,13 @@ Expensive knowledge. Do not re-learn it.
 
 4. **A smooth circular wall never releases what it has caught.** Past the crest, the centripetal
    requirement `v²/R ≥ g·sin θ` only gets *easier* as θ increases — so a fast ball rides the outer
-   rail forever and drains without touching a nail. Real machines solve this with the 返しゴム,
-   the return rubber, and so does this one.
+   rail forever and drains without touching a nail. Real boards break the ball off at the top
+   right, where the 天釘 sit; this one uses a rubber wedge in the same place.
+
+   (An earlier version of that comment called the part 返しゴム and presented it as its real name.
+   Two research passes found no such rubber component in any Japanese board-part reference. The
+   physics was measured and correct; the name was not sourced and is gone. **A confident-sounding
+   loanword is not a citation.**)
 
 5. **Contacts with light bodies must be solved two-body.** Treating the windmill as a wall and
    *then* torquing it invents angular momentum every strike. With a rotor inertia around 10⁻⁶ kg·m²
@@ -170,6 +175,27 @@ That mechanic only works because the physics underneath is real. That is why the
 first.
 
 ---
+
+### One more thing, and it is the most useful thing here
+
+**Audit your own documentation adversarially, and do it before you believe yourself.**
+
+Every claim in this repository was extracted and independently fact-checked with web access, by
+verifiers instructed to find errors rather than confirm them. 120 claims, 27 flagged, 17 real.
+
+The *measurements* were nearly perfect — every restitution figure, every test statistic, every
+regulatory limit verbatim correct. What failed was the prose around them: a regulatory fact that
+does not exist, a Japanese part name that could not be sourced, a citation year, a misattributed
+construct, a correction asserted in the wrong direction, and two unsupported claims sitting
+inside the very sentence congratulating this project for cutting an unsupported claim.
+
+And the worst one was not a citation at all. It was a **code defect that three documents
+confidently described as working** — the value map that never learned. The prose was so sure of
+itself that it papered over a dead feature.
+
+A project that cites its sources is not automatically honest. It is merely *checkable* — and only
+if somebody actually checks. Run the audit again after you have written your own confident
+paragraphs. It will find something.
 
 ### Maker's mark
 

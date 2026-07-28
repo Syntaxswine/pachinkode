@@ -31,7 +31,7 @@ Almost everything physical about a pachinko machine is *written into Japanese la
 | Board-to-glass gap | >13 mm and ≤25 mm | not modelled — see §6 | PRIMARY |
 | Nail material | brass, 150–230 HV | `board.js` `NAIL_R` | PRIMARY |
 | Nail shank | 1.7–2.0 mm diameter | `board.js` `NAIL_R` = 0.9 mm | PARTIAL |
-| Nails per board | ~200 typical (range ~150–600) | 110 after wedge cull | PARTIAL |
+| Nails per board | reported ~100–500+, no legal count | 107 after wedge cull | PARTIAL |
 | Heso (start pocket) nail gap | 11.25–12.50 mm, tuned in 0.25 mm steps | `board.js` `hesoGap` = 12.5 mm | PARTIAL |
 | Prize pocket / gate mouth | ≤13 mm | `BOARD.mouthClosed` | PRIMARY |
 | Tulip mouth when open | ≤55 mm | `BOARD.mouthTulip` = 50 mm | PRIMARY |
@@ -56,12 +56,17 @@ legal range.
 
 | Pair | Value | Source |
 |---|---|---|
-| ball → nail | **0.50** | Sandeep, Senetakis, Cheung, Choi, Wang, Coop & Ng, *Canadian Geotechnical Journal*, DOI 10.1139/cgj-2018-0712. Chrome steel spheres on a brass block at 1.74–2.43 m/s — pachinko's own nail-impact band — measured 0.54, 0.53, 0.52, 0.51. **VERIFIED** |
+| ball → nail | **0.50** | Sandeep, Senetakis, Cheung, Choi, Wang, Coop & Ng, *Canadian Geotechnical Journal* 58(1):35–48 (2021), DOI 10.1139/cgj-2018-0712. Chrome steel spheres on a brass block at 1.74–2.43 m/s — overlapping pachinko's nail-impact band — measured 0.54, 0.53, 0.52, 0.51. **VERIFIED** |
 | ball → board, rail, vane, ball | 0.30, 0.28, 0.40, 0.65 | generic engineering values. **DESIGN** — no pachinko-specific measurement exists and the code says so |
 
-Two corrections push the nail figure below the measured 0.52: the tested spheres were ~2 mm and
-restitution falls with sphere diameter, and the regulation fixes nail brass at a soft 150–230 HV,
-which dissipates more.
+One correction pushes the nail figure below the measured 0.52: the tested spheres were ~2 mm and
+restitution falls with sphere diameter.
+
+An earlier version of this file claimed a *second* correction — that the regulation's 150–230 HV
+brass is softer than the tested block and so dissipates more. That does not hold up. The paper
+characterises its block only by modulus and never reports its hardness, so there is nothing to
+compare against; and 150–230 HV is the hard-drawn end of the brass range (annealed is ~65 HV),
+which if anything would push restitution the other way. Noted, not applied.
 
 ### Muzzle velocity — the weakest number here
 
@@ -204,10 +209,17 @@ rising pitch reads as approach-to-reward. **A literature pass could not find a s
 peer-reviewed manipulation of pitch contour in a gambling context.** It is design folklore,
 repeated confidently. It was cut.
 
-What the literature *does* support is narrower — win-paired, predictable, salience scaled with
-reward size, duration proportional to magnitude — and that is exactly what `synth.js` implements
-and nothing more. The rising scale would have sounded good. It would also have been a mood
-wearing a lab coat, which is the specific failure this project is organised against.
+What the literature *does* support is narrower — win-paired, and duration proportional to
+magnitude — and that is exactly what `synth.js` implements and nothing more. The rising scale
+would have sounded good. It would also have been a mood wearing a lab coat, which is the specific
+failure this project is organised against.
+
+**And the same failure got two more past the door.** An earlier version of this section also
+listed "predictable" and "salience scaled with reward size" as established. Neither is in Dixon
+et al. (2013): the team deliberately used *unfamiliar* custom sounds, which cuts against
+predictability, and salience was never manipulated. An adversarial audit of every claim in this
+repository caught them — inside the very sentence congratulating the project for cutting the
+pitch contour. Which is about the right amount of humbling, and is why §7 exists.
 
 ---
 
@@ -307,7 +319,36 @@ the trick was doing.
 
 ---
 
-## 6. Known gaps
+## 6. The audit
+
+Every claim in this repository was extracted and independently fact-checked by a fan-out of
+verifiers with web access, instructed to find errors rather than confirm them. 120 claims were
+checked and 27 flagged; after collapsing duplicates and false alarms, **17 were real**.
+
+The measured constants held up almost perfectly — every restitution figure, every test statistic,
+every regulatory limit was verbatim correct. What did not hold up was the *prose around them*:
+
+- A **code defect** that made three files describe behaviour the build did not produce (the value
+  map never learned; see §2 and `test/learning.test.js`).
+- A **regulatory fact that does not exist** — the player-facing panel said the ball's *mass* is
+  fixed by law. The law fixes the diameter and gives mass as a band. The code and this file both
+  had it right; the one place headed WHAT IS REAL was where it was lost.
+- A **part name that could not be sourced**. The return wedge at the top right was labelled
+  返しゴム. Two research passes over Japanese board-part references found no rubber component by
+  that name and no ゴム part at the rail top at all. The physics is measured and load-bearing; the
+  name was invented-sounding and is gone.
+- **A citation year**, **a misattributed construct** (dark flow is a multiline-slots finding, not
+  a pachinko one), **a correction asserted in the wrong direction** (the brass-hardness argument
+  above), and **two unsupported claims smuggled into the sentence congratulating this project for
+  cutting an unsupported claim**.
+
+None of that was caught by playing the game or by running the tests. It was caught by treating
+the documentation as something that could be wrong. A project that cites its sources is not
+automatically honest — it is merely *checkable*, and only if somebody checks.
+
+---
+
+## 7. Known gaps
 
 Named so they are invitations rather than omissions.
 

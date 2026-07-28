@@ -298,7 +298,15 @@ export class Dopamine {
 // on the reasoning that rising pitch reads as approach-to-reward. A literature
 // pass could not find a single peer-reviewed manipulation of pitch contour in a
 // gambling context — it is design folklore repeated confidently. What IS
-// established (Dixon et al. 2013, J. Gambling Studies, n=96) is narrower: audio
-// must be win-paired, predictable, scaled in salience with reward size, and
-// longer for bigger wins. The synth follows that and nothing more. The rising
-// scale would have sounded good, and would have been a mood wearing a lab coat.
+// established (Dixon et al. 2013, J. Gambling Studies, n=96) is narrower still:
+// audio must be win-paired, and longer for bigger wins.
+//
+// "Predictable" and "scaled in salience with reward size" appeared in an earlier
+// version of this very sentence, and they are not in that paper either — Dixon's
+// team deliberately used unfamiliar custom sounds, which cuts *against*
+// predictability, and salience was never manipulated. They belong in the same
+// bucket as the pitch contour. Caught by an adversarial audit of this file, in
+// the sentence congratulating this file for cutting an unsupported claim, which
+// is roughly the correct amount of humbling.
+//
+// The synth follows the two verified properties and nothing more.

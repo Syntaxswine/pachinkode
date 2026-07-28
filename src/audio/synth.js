@@ -10,8 +10,12 @@
 // (F(1,88) = 5.600, p = .020). Their machines used jingles from 1.5 s to 12 s,
 // "the bigger the win the longer the song."
 //
-// So: win-paired, predictable, salience scaled with size, duration proportional
-// to magnitude. That is the whole verified toolkit and it is what is implemented.
+// So: win-paired, and duration proportional to magnitude. That is the whole
+// verified toolkit and it is what is implemented. ("Predictable" and "salience
+// scaled with size" stood here in an earlier draft and are not in that paper
+// either — Dixon's team used unfamiliar custom sounds, which cuts against
+// predictability, and salience was never manipulated. See the closing note in
+// src/sim/dopamine.js.)
 //
 // The thing deliberately NOT implemented is an ascending pitch contour with
 // rising anticipation. It is repeated confidently in design writing and has no
@@ -62,7 +66,9 @@ export class Synth {
 
     this.master = ctx.createGain()
     this.master.gain.value = this.vol.master
-    // A limiter, so a jackpot with forty balls landing at once cannot clip.
+    // A compressor doing limiter duty, so a jackpot with forty balls landing at
+    // once will not clip in steady state. It is not a brickwall — with a 30 dB
+    // soft knee and a 3 ms attack a very fast transient can still overshoot.
     this.comp = ctx.createDynamicsCompressor()
     this.comp.threshold.value = -14
     this.comp.ratio.value = 8
@@ -273,7 +279,12 @@ export class Synth {
     o.start(t); o.stop(t + 2.5)
   }
 
-  /** A losing spin. Silent at full varnish — real machines say nothing. */
+  /**
+   * A losing spin. Silent at full varnish — not because real parlours are quiet
+   * (they are among the loudest public spaces in Japan; BGM and reel-stop sounds
+   * run continuously) but because what a machine withholds on a loss is the
+   * *jingle*. At varnish 0 it gets a tone, which is the unmasking manipulation.
+   */
   lose (reach, varnish = 1) {
     if (clamp(varnish) > 0.5) return
     this.tone(140, 0.20, 0.07, 'sine')
