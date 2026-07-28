@@ -533,6 +533,68 @@ Note that score ÷ quota is a **worthless** metric here and the first version of
 it anyway: a floor ends the instant its quota is met, so a cleared floor's ratio is pinned just
 above 1.00 by construction and every row reads "1.00×" whether it was a scrape or a rout.
 
+### The floor's own decision
+
+Meeting the quota opens a choice rather than ending the floor: PUSH ON for surplus score, which
+buys extra parts on a doubling scale, or BANK the tray into the next floor's allowance.
+
+Two design constraints made it work rather than merely exist.
+
+**Surplus picks are strictly ON TOP of the base.** `picksFor` is the function the difficulty
+curve was measured against and the mechanism that makes the two curves cross at all; a surplus
+rule that replaced it rather than adding to it would move the crossover invisibly. A test pins
+that the base is untouched.
+
+**The doubling scale is not decoration.** A flat threshold — "half a quota of surplus buys a
+part" — is met by accident on late floors, which clear on 4% of the tray. The decision would
+evaporate at exactly the depth where the player finally has enough balls for it to be interesting.
+Doubling keeps the price rising as fast as the board does.
+
+**And the old leftover bonus had to go.** It paid score for unspent balls, which meant a ball was
+worth score AND a ball at the same time — there was no trade, just a number that went up either
+way. A ball is now worth exactly one of the two things and the player picks which.
+
+**The carry is capped at one base tray**, and that ceiling is not taste either. Uncapped, banking
+is a geometric series with a fixed point: a floor cleared on 4% of the tray hands 96% of it
+forward, so `next = 160 + 0.96 × prev` settles near four THOUSAND balls — a thirteen-minute floor,
+for the player and for the instrument, which simply stopped finishing. One base tray means the
+best possible bank doubles your allowance and no more.
+
+The measured curve, with the corrected metric (10 runs, thrifty policy):
+
+| floor | tray spent to MEET the quota | runs clearing it |
+|---|---|---|
+| 1 | 69% | 70% |
+| 2 | 205% | 100% |
+| 3 | 155% | 100% |
+| 4 | 46% | 100% |
+| 7 | 9% | 100% |
+| 12 | 1% | 100% |
+
+Floors 2–3 costing more than a full tray is not an error: BALL RETURN refunds stretch the
+allowance, so a floor can spend twice what it opened with. The shape worth noticing is that
+**floor 1 is a filter and floors 2–3 are the crunch** — the hardest moment of a run arrives
+after the player has taken one part and thinks they understand the machine.
+
+**Is it actually a decision?** Only if no policy dominates, so all three were measured (8 runs
+each, stock cabinet, `--push bank|push|thrifty`):
+
+| policy | runs cleared | median score |
+|---|---|---|
+| always bank | 5/8 | 357,720 |
+| always push | 4/8 | 10,113,403,534 |
+| thrifty | 5/8 | 5,563,683,422 |
+
+Banking buys survival. Pushing buys four orders of magnitude of score and costs a run. The
+floor-1 clear rate and the crossover floor are identical across all three, which is the expected
+result and a useful check on the instrument: the decision happens strictly AFTER the quota is met,
+so it cannot move how hard meeting it was.
+
+That last point also forced a metric change. "Tray spent to clear" stopped meaning anything the
+moment PUSH ON existed — a player who pushes spends the whole tray by definition, so the column
+measured the policy rather than the difficulty. The run now freezes `launchedAtQuota` at the
+moment the quota falls, and the tool reports that instead.
+
 ### The clock is launches, not the tray
 
 A pachinko tray refills constantly out of the machine's own pockets. An early build read the

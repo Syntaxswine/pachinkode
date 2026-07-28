@@ -109,9 +109,35 @@ export const CABINETS = {
 
 export const CABINET_ORDER = ['floor', 'ippatsu', 'hanemono', 'kenri', 'digipachi', 'uramono']
 
+// ── the record ──────────────────────────────────────────────────────────────
+//
+// Everything that survives a death. It is deliberately LOCAL — localStorage,
+// this browser, no server, no account, nothing leaving the machine — which is
+// the only kind of high-score table that fits a game whose whole argument is
+// about what a machine does to the person in front of it.
+//
+// `records` keeps the best RUNS_KEPT runs in full rather than just a number,
+// because a score with no context is the least interesting thing about a run.
+// Which cabinet, how deep, how long the best chain ran, how many parts were
+// fitted — that is a record somebody can read and want to beat specifically.
+
+/** How many individual runs the table remembers. */
+export const RUNS_KEPT = 10
+
 /** Fresh meta record — what persists between runs. */
 export function newMeta () {
-  return { bestFloor: 0, lifetimeScore: 0, wins: 0, runs: 0, bestScore: 0, seen: [] }
+  return {
+    bestFloor: 0,
+    lifetimeScore: 0,
+    wins: 0,
+    runs: 0,
+    bestScore: 0,
+    bestChain: 0,
+    lifetimeBalls: 0,
+    records: [],       // [{score, floor, cab, cleared, parts, chain, at}] — best first
+    perCab: {},        // cab → {best, runs, cleared, bestFloor}
+    seen: []
+  }
 }
 
 /** Is this cabinet unlocked by the given meta record? */
@@ -136,14 +162,45 @@ export function unlockText (cab, meta) {
   return want.join(' · ')
 }
 
-/** Fold a finished run into the meta record. Returns the ids newly unlocked. */
-export function recordRun (meta, run) {
+/**
+ * Fold a finished run into the meta record. Returns the ids newly unlocked.
+ *
+ * `at` is passed in rather than read from the clock here, so this stays a pure
+ * function of its inputs and the tests do not have to freeze time.
+ */
+export function recordRun (meta, run, at = null) {
   const before = CABINET_ORDER.filter(k => isUnlocked(CABINETS[k], meta))
+  const cab = (run.cabinet && run.cabinet.id) || 'floor'
+
   meta.runs = (meta.runs || 0) + 1
   meta.lifetimeScore = (meta.lifetimeScore || 0) + run.score
   meta.bestScore = Math.max(meta.bestScore || 0, run.score)
   meta.bestFloor = Math.max(meta.bestFloor || 0, run.floor)
+  meta.bestChain = Math.max(meta.bestChain || 0, run.bestChain || 0)
   if (run.cleared) meta.wins = (meta.wins || 0) + 1
+
+  // Per-cabinet, because "my best" on the stock machine and on URAMONO are not
+  // remotely the same claim — the quota multiplier alone is 2.1×.
+  meta.perCab = meta.perCab || {}
+  const pc = meta.perCab[cab] || (meta.perCab[cab] = { best: 0, runs: 0, cleared: 0, bestFloor: 0 })
+  pc.runs++
+  pc.best = Math.max(pc.best, run.score)
+  pc.bestFloor = Math.max(pc.bestFloor, run.floor)
+  if (run.cleared) pc.cleared++
+
+  meta.records = meta.records || []
+  meta.records.push({
+    score: Math.round(run.score),
+    floor: run.floor,
+    cab,
+    cleared: !!run.cleared,
+    parts: (run.loadout && run.loadout.parts.length) || 0,
+    chain: run.bestChain || 0,
+    at
+  })
+  meta.records.sort((a, b) => b.score - a.score)
+  meta.records.length = Math.min(meta.records.length, RUNS_KEPT)
+
   const after = CABINET_ORDER.filter(k => isUnlocked(CABINETS[k], meta))
   return after.filter(k => !before.includes(k))
 }

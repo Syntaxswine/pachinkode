@@ -365,7 +365,7 @@ It gave back more than it took — RTP *rose*, because a player who reacts is on
 when the mouth opens instead of a ball behind it. **A reaction window is an economy change;
 re-calibrate after touching it.**
 
-### Left undone, deliberately or honestly
+## Left undone, deliberately or honestly
 
 - The aim-spin idea from the first movement still stands (`makeBall` takes an angular velocity
   nobody sets).
@@ -563,7 +563,9 @@ whole mechanism, and `test/run.test.js` fails if anyone flattens it to a constan
 **2. "Hard" is a margin, not a death rate.** My own tool printed a target band of 35–55% for the
 floor-1 clear rate. That band is wrong and the tool now says so in a comment: clear rates
 COMPOUND, so four floors at 50% means six per cent of runs see floor 5. The early difficulty lives
-in cost-to-clear (65% of the tray at floor 1, 4% at floor 12), not in deaths.
+in cost-to-clear (most of the tray at floor 1, a couple of per cent by floor 12), not in deaths.
+See the later section on the floor's decision — that metric had to be redefined once the player
+could choose to keep firing past the quota.
 
 **3. The tray is not a clock.** Reading the floor's remaining balls off the machine's token
 balance seemed obviously right — the machine already maintains that number correctly. It does; it
@@ -602,6 +604,34 @@ measured arrival spread so a starved mouth is still worth drafting.
 - **`document.hidden` is true in the in-app preview pane**, so rAF is throttled to nothing and a
   browser harness sees a frozen board. `__pachinkode.tick(n, dt)` exists for that: the harness
   supplies the clock the browser is refusing to. Screenshots still need the `/__shot` sink.
+
+## Two late additions, and a bug they exposed
+
+**The floor's decision** (operator's request): meeting the quota opens PUSH ON / BANK rather than
+ending the floor. Surplus buys parts by doubling; banked balls ride into the next floor's tray.
+The old leftover bonus is gone — it paid score for the same balls that carried forward, so there
+was no trade to make.
+
+**A local high-score record**: the best run on the title screen, a RECORDS screen with the top ten
+runs in full (cabinet, floor, parts fitted, longest chain, date), per-cabinet bests kept apart
+because a score on 街台 and one on 裏物 are not the same claim, and the aggregate figures. It lives
+in localStorage and nowhere else. `recordRun` takes its timestamp as an argument so it stays a
+pure function and the tests do not have to freeze the clock.
+
+**And the bug.** Verifying the decision screen in the browser, the board showed a 75% foul rate
+where the instrument measures 1–4%. It presented as the channel jam — which is a real mechanic,
+which is what made it convincing for several minutes.
+
+It was not. `machine.sinceLaunch` was **−2.383 s**. `frame()` computed `dt = Math.min(0.05, t -
+lastT)` with a ceiling and no FLOOR, so any event that advanced the clock out from under it —
+the manual `tick()` used for browser verification, a tab restore, a system clock step — produced a
+NEGATIVE dt, and the simulation integrated backwards. The launcher then had to wait two and a half
+seconds for a lockout that had never elapsed, and the board filled with balls that had run in
+reverse.
+
+Both `frame()` and `tick()` now refuse a non-positive step. Two lessons worth keeping: a
+plausible-looking symptom that matches a known mechanic is the hardest kind to see past, and the
+harness that verifies the game is part of the game's attack surface.
 
 ## Left undone
 

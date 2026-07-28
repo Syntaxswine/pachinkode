@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Run, quotaFor, picksFor, chainMult, SCORE, FLOORS, QUOTA_GROWTH } from '../src/sim/run.js'
+import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_GROWTH, MAX_SURPLUS_PICKS } from '../src/sim/run.js'
 import {
   baseLoadout, resolveLoadout, drawOffers, partAvailable, countPart,
   PARTS, PART_BY_ID, BUCKET_SITES, SITE_ORDER, BUCKET_MOUTH_MAX
 } from '../src/sim/loadout.js'
-import { CABINETS, CABINET_ORDER, isUnlocked, newMeta, recordRun } from '../src/sim/cabinets.js'
+import { CABINETS, CABINET_ORDER, isUnlocked, newMeta, recordRun, RUNS_KEPT } from '../src/sim/cabinets.js'
 import { buildBoard } from '../src/sim/board.js'
 import { Machine } from '../src/sim/machine.js'
 import { makeRng } from '../src/sim/rng.js'
@@ -230,27 +230,121 @@ test('SOFTER QUOTA lowers the wall and cannot invert it', () => {
 
 // ── floors, drafts, overtime ────────────────────────────────────────────────
 
-/** Score a run past its quota without simulating any physics. */
-function clearFloor (run) {
+/** Score a run to its quota without simulating any physics. Stops at the decision. */
+function toQuota (run) {
   let guard = 0
-  while (run.status === 'playing' && guard++ < 20000) {
+  while (run.status === 'playing' && guard++ < 40000) {
     run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
       { inFlight: 1 })
   }
   return guard
 }
 
-test('clearing a floor deals a draft and pays for the balls left over', () => {
+/** Reach the quota and bank — the plain path through a floor. */
+function clearFloor (run) {
+  toQuota(run)
+  if (run.status === 'decision') run.bank()
+  return run
+}
+
+// ── the decision: push on, or bank the tray ─────────────────────────────────
+
+test('meeting the quota opens a decision instead of ending the floor', () => {
   const run = new Run(cab, 9)
-  clearFloor(run)
+  toQuota(run)
+  assert.equal(run.status, 'decision')
+  assert.ok(run.floorScore >= run.quota)
+  assert.ok(run.ballsLeft > 0, 'the decision is meaningless with an empty tray')
+  const ev = run.drain().find(e => e.type === 'quotaMet')
+  assert.ok(ev, 'no quotaMet event')
+  assert.equal(ev.ballsLeft, run.ballsLeft)
+  assert.ok(ev.nextPickAt > run.floorScore, 'the next part must be a stated price')
+})
+
+test('the carry is capped at one base tray', () => {
+  // Uncapped, banking is a geometric series that converges near four thousand
+  // balls — a thirteen-minute floor. See Run#bank.
+  const run = new Run(cab, 9)
+  run.metQuota = true
+  run.status = 'decision'
+  run.ballsLeft = 5000
+  run.bank()
+  assert.equal(run.banked, BALLS_BASE)
+})
+
+test('banking carries the tray into the next floor, on top of its allowance', () => {
+  const run = new Run(cab, 9)
+  toQuota(run)
+  const left = run.ballsLeft
+  assert.ok(left > 0)
+  run.bank()
   assert.equal(run.status, 'cleared')
-  assert.ok(run.offers && run.offers.length === 3)
-  assert.equal(run.picksLeft, picksFor(1))
+  assert.equal(run.banked, left)
+  while (run.status === 'cleared') run.take(run.offers[0].id)
+  assert.equal(run.ballsLeft, ballsFor(run.floor, run.loadout) + left,
+    'banked balls did not ride along')
+  assert.equal(run.banked, 0, 'the bank was not emptied on arrival')
+})
+
+test('pushing on keeps the floor alive and keeps scoring', () => {
+  const run = new Run(cab, 9)
+  toQuota(run)
+  const at = run.floorScore
+  run.pushOn()
+  assert.equal(run.status, 'playing')
+  run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
+    { inFlight: 1 })
+  assert.ok(run.floorScore > at, 'surplus scored nothing')
+  assert.equal(run.status, 'playing', 'the decision re-opened — it must only ask once')
+})
+
+test('pushing on until the tray is empty clears the floor, it does not fail the run', () => {
+  const run = new Run(cab, 9)
+  toQuota(run)
+  run.pushOn()
+  run.ballsLeft = 0
+  run.observe([], 0.016, { inFlight: 0 })
+  assert.equal(run.status, 'cleared',
+    'spending everything on a floor you had already won ended the run')
+  assert.equal(run.banked, 0)
+})
+
+test('surplus buys parts by doubling, and the ceiling holds', () => {
+  const run = new Run(cab, 9)
+  run.quota = 1000
+  run.floorScore = 999
+  assert.equal(run.surplusPicks(), 0, 'a part was bought before the quota was even met')
+  run.floorScore = 2000
+  assert.equal(run.surplusPicks(), 1)
+  run.floorScore = 4000
+  assert.equal(run.surplusPicks(), 2)
+  run.floorScore = 8000
+  assert.equal(run.surplusPicks(), 3)
+  run.floorScore = 8000000
+  assert.equal(run.surplusPicks(), MAX_SURPLUS_PICKS, 'the surplus ceiling leaked')
+  assert.equal(run.picksEarned(), picksFor(run.floor) + MAX_SURPLUS_PICKS)
+})
+
+test('the base pick count is untouched by the surplus rule', () => {
+  // picksFor is what the difficulty curve was measured against. Surplus picks
+  // are strictly ON TOP; if they ever replace the base, the crossover moves.
+  const run = new Run(cab, 9)
+  toQuota(run)
+  run.bank()
+  assert.equal(run.picksLeft, picksFor(1) + run.surplusPicks())
+  assert.ok(run.picksLeft >= picksFor(1))
+})
+
+test('unspent balls are worth balls OR score, never both', () => {
+  // The old leftover bonus paid score for balls that were also carried
+  // forward, which meant there was no trade — the number went up either way.
+  const run = new Run(cab, 9)
+  toQuota(run)
+  run.bank()
   const evs = run.drain()
   assert.ok(evs.some(e => e.type === 'floorCleared'))
-  assert.ok(evs.some(e => e.type === 'leftoverBonus'),
-    'efficiency paid nothing — clearing on ball 20 scored the same as on ball 159')
-  assert.ok(run.score > run.floorScore, 'the leftover bonus never reached the run total')
+  assert.ok(!evs.some(e => e.type === 'leftoverBonus'),
+    'banked balls were also paid as score — that is not a trade-off, it is a bonus')
 })
 
 test('taking a part deals again until the floor s picks are used up', () => {
@@ -261,7 +355,8 @@ test('taking a part deals again until the floor s picks are used up', () => {
     while (run.status === 'cleared') run.take(run.offers[0].id)
   }
   clearFloor(run)
-  const want = picksFor(run.floor)
+  const want = run.picksLeft
+  assert.ok(want >= picksFor(run.floor - 0))
   let dealt = 0
   while (run.status === 'cleared') { dealt++; run.take(run.offers[0].id) }
   assert.equal(dealt, want, `floor ${run.floor - 1} dealt ${dealt} times, wanted ${want}`)
@@ -332,6 +427,60 @@ test('a run records into the meta, and unlocks are monotone', () => {
 })
 
 // ── the base values ─────────────────────────────────────────────────────────
+
+// ── the record ──────────────────────────────────────────────────────────────
+
+/** A finished-run stub, since recordRun only reads a handful of fields. */
+const finished = (score, floor, cabKey = 'floor', cleared = false, chain = 0) => ({
+  score, floor, cleared, bestChain: chain,
+  cabinet: CABINETS[cabKey], loadout: { parts: ['bucket', 'mult'] }
+})
+
+test('the record table keeps the best runs, in order, and bounded', () => {
+  const meta = newMeta()
+  for (let i = 1; i <= RUNS_KEPT + 8; i++) recordRun(meta, finished(i * 100, i), 1000 + i)
+  assert.equal(meta.records.length, RUNS_KEPT, 'the table grew without bound')
+  for (let i = 1; i < meta.records.length; i++) {
+    assert.ok(meta.records[i - 1].score >= meta.records[i].score, 'the table is not sorted')
+  }
+  assert.equal(meta.records[0].score, (RUNS_KEPT + 8) * 100)
+  assert.equal(meta.runs, RUNS_KEPT + 8, 'the run COUNT must not be capped with the table')
+})
+
+test('a record carries enough context to be worth beating', () => {
+  const meta = newMeta()
+  recordRun(meta, finished(5000, 7, 'uramono', true, 42), 123456)
+  const r = meta.records[0]
+  assert.equal(r.cab, 'uramono')
+  assert.equal(r.floor, 7)
+  assert.equal(r.cleared, true)
+  assert.equal(r.chain, 42)
+  assert.equal(r.parts, 2)
+  assert.equal(r.at, 123456)
+})
+
+test('per-cabinet bests are kept apart', () => {
+  // A score on the stock machine and one on URAMONO are not the same claim —
+  // the quota multiplier alone is 2.1×.
+  const meta = newMeta()
+  recordRun(meta, finished(9000, 5, 'floor'))
+  recordRun(meta, finished(3000, 3, 'uramono'))
+  assert.equal(meta.perCab.floor.best, 9000)
+  assert.equal(meta.perCab.uramono.best, 3000)
+  assert.equal(meta.perCab.floor.runs, 1)
+  assert.ok(!meta.perCab.hanemono, 'a cabinet never played got a record anyway')
+})
+
+test('the record survives a save round-trip', () => {
+  // It lives in localStorage as JSON, so anything that cannot survive
+  // JSON.stringify is not really persisted however correct it looks in memory.
+  const meta = newMeta()
+  recordRun(meta, finished(4242, 9, 'kenri', true, 17), 999)
+  const back = JSON.parse(JSON.stringify(meta))
+  assert.deepEqual(back.records, meta.records)
+  assert.deepEqual(back.perCab, meta.perCab)
+  assert.equal(back.bestChain, 17)
+})
 
 test('a bucket outscores a start-pocket entry', () => {
   // The project's own argument, applied to the scoreboard: an honest prize is

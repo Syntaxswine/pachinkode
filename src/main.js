@@ -12,7 +12,7 @@ import { Dopamine } from './sim/dopamine.js'
 import { Renderer } from './render/board-render.js'
 import { Synth } from './audio/synth.js'
 import { Hud } from './ui/hud.js'
-import { Run, FLOORS, quotaFor } from './sim/run.js'
+import { Run, FLOORS, quotaFor, BALLS_BASE } from './sim/run.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
 import { PART_BY_ID, countPart } from './sim/loadout.js'
 import { scoreTier } from './render/palette.js'
@@ -132,7 +132,7 @@ function buildFloor () {
 
 // ── screens ────────────────────────────────────────────────────────────────
 
-const SCREENS = ['title', 'options', 'about', 'cabinets', 'backroom', 'runover']
+const SCREENS = ['title', 'options', 'about', 'cabinets', 'backroom', 'runover', 'records', 'decide']
 
 function go (name) {
   state.screen = name
@@ -140,6 +140,7 @@ function go (name) {
   $('#play').classList.toggle('on', name === 'play')
   if (name === 'title') { syncMeta() }
   if (name === 'cabinets') { syncCabinets() }
+  if (name === 'records') { syncRecords() }
   if (name === 'play') {
     if (!machine) newSession()
     resize()
@@ -170,8 +171,11 @@ document.addEventListener('click', (e) => {
 $('#toTitle').addEventListener('click', () => go('title'))
 $('#resumeRun').addEventListener('click', () => {
   synth.start().then(() => synth.click())
-  go(run.status === 'cleared' ? 'backroom' : 'play')
-  if (run.status === 'cleared') syncBackroom()
+  // Resume onto whichever screen the run is actually waiting on. Sending a run
+  // that is mid-decision back to the play screen would strand it: the launcher
+  // is stopped and the only thing that can restart it is a choice on a screen
+  // the player is no longer looking at.
+  if (run.status === 'cleared') { syncBackroom(); go('backroom') } else if (run.status === 'decision') { syncDecide(); go('decide') } else go('play')
 })
 
 // ── the cabinet select ─────────────────────────────────────────────────────
@@ -189,11 +193,75 @@ function syncMeta () {
       `${run.ballsLeft} balls in the tray`
   }
   const m = state.meta
+  // The headline record, on the title screen where a high score belongs.
+  const top = (m.records || [])[0]
+  $('#titleBest').innerHTML = top
+    ? `<b>${fmt(top.score)}</b>${CABINETS[top.cab] ? CABINETS[top.cab].label : top.cab} · ` +
+      `FLOOR ${top.floor}${top.cleared ? ' · CLEARED' : ''}`
+    : (m.runs ? '<b>—</b>NO RUN SCORED YET' : '')
   $('#metaLine').textContent = m.runs
     ? `${m.runs} run${m.runs === 1 ? '' : 's'} · best floor ${m.bestFloor} · ` +
-      `best score ${fmt(m.bestScore)} · ${fmt(m.lifetimeScore)} lifetime` +
-      `${m.wins ? ` · ${m.wins} cleared` : ''}`
+      `${fmt(m.lifetimeScore)} lifetime${m.wins ? ` · ${m.wins} cleared` : ''}`
     : ''
+}
+
+// ── records ────────────────────────────────────────────────────────────────
+
+function syncRecords () {
+  const m = state.meta
+  const rows = m.records || []
+  const table = $('#recTable')
+  table.textContent = ''
+  if (!rows.length) {
+    table.innerHTML = '<div class="empty">No runs recorded yet. Every run ends somewhere; ' +
+      'this is where it goes.</div>'
+  } else {
+    rows.forEach((r, i) => {
+      const cab = CABINETS[r.cab]
+      const d = document.createElement('div')
+      d.className = 'r' + (i === 0 ? ' top' : '') + (r.cleared ? ' win' : '')
+      // Rank always, and the star as a separate mark on the FLOOR. Using the
+      // star in place of the rank read as "these three are equal" once the top
+      // of the table filled up with cleared runs.
+      d.innerHTML =
+        `<span class="n">${i + 1}</span>` +
+        `<span><span class="s">${fmt(r.score)}</span>` +
+        `<span class="d">  ${cab ? cab.label : r.cab} · floor ${r.floor}` +
+        `${r.cleared ? ' ★' : ''} · ${r.parts} part${r.parts === 1 ? '' : 's'} · ` +
+        `chain ${r.chain}</span></span>` +
+        `<span class="d">${r.at ? new Date(r.at).toLocaleDateString() : ''}</span>`
+      table.appendChild(d)
+    })
+  }
+
+  const cabs = $('#recCabs')
+  cabs.textContent = ''
+  let any = false
+  for (const key of CABINET_ORDER) {
+    const pc = (m.perCab || {})[key]
+    if (!pc || !pc.runs) continue
+    any = true
+    const d = document.createElement('div')
+    d.className = 'r'
+    d.innerHTML =
+      `<span class="n">${CABINETS[key].jp}</span>` +
+      `<span><span class="s">${fmt(pc.best)}</span>` +
+      `<span class="d">  ${CABINETS[key].label} · ×${CABINETS[key].difficulty.toFixed(2)} quota · ` +
+      `best floor ${pc.bestFloor}</span></span>` +
+      `<span class="d">${pc.runs} run${pc.runs === 1 ? '' : 's'}` +
+      `${pc.cleared ? ` · ${pc.cleared} cleared` : ''}</span>`
+    cabs.appendChild(d)
+  }
+  if (!any) cabs.innerHTML = '<div class="empty">Nothing played yet.</div>'
+
+  const stat = (k, v) => `<div class="stat"><span>${k}</span><span>${v}</span></div>`
+  $('#recStats').innerHTML =
+    stat('runs', m.runs || 0) +
+    stat('deepest floor', m.bestFloor || 0) +
+    stat('runs cleared (12 floors)', m.wins || 0) +
+    stat('longest chain', m.bestChain || 0) +
+    stat('lifetime score', fmt(m.lifetimeScore || 0)) +
+    stat('mean score per run', m.runs ? fmt((m.lifetimeScore || 0) / m.runs) : '—')
 }
 
 const fmt = (n) => Math.round(n).toLocaleString('en-US')
@@ -221,6 +289,59 @@ function syncCabinets () {
   }
 }
 
+// ── the decision ───────────────────────────────────────────────────────────
+//
+// The floor's real question. Both options are stated with their actual numbers
+// rather than their flavour, because the whole point is that it is a genuine
+// trade and a player cannot weigh one they have to guess at.
+
+function syncDecide (ev) {
+  const r = run
+  $('#dcHead').textContent = r.floor > FLOORS
+    ? `OVERTIME ${r.floor - FLOORS} — QUOTA MET`
+    : `FLOOR ${r.floor} — QUOTA MET`
+  $('#dcScore').textContent = fmt(r.floorScore)
+  $('#dcSub').textContent =
+    `${fmt(r.floorScore)} against ${fmt(r.quota)}, with ${r.ballsLeft} ball` +
+    `${r.ballsLeft === 1 ? '' : 's'} still in the tray. ` +
+    `Next floor wants ${fmt(nextQuota())}.`
+
+  const nextAt = r.nextPickAt()
+  $('#dcPushBl').textContent = nextAt
+    ? `${r.picksEarned()} part${r.picksEarned() === 1 ? '' : 's'} so far — ` +
+      `${fmt(nextAt - r.floorScore)} more score buys another.`
+    : `${r.picksEarned()} parts — the surplus ceiling is reached.`
+  // State the number the next floor will actually open with, not the delta.
+  // The first draft said "carried into a floor that would otherwise start with
+  // 7 fewer", which is circular — it defines the gain in terms of itself.
+  // The carry is capped at one base tray (see Run#bank), and the cap has to be
+  // visible here or a player banking 400 balls would be quietly given 160.
+  const base = BALLS_BASE + r.loadout.ballBonus
+  const carry = Math.min(r.ballsLeft, BALLS_BASE)
+  $('#dcBankBl').textContent =
+    `${r.picksEarned()} part${r.picksEarned() === 1 ? '' : 's'}, and the next floor opens with ` +
+    `${base + carry} balls instead of ${base}` +
+    `${carry < r.ballsLeft ? ` (the carry caps at ${BALLS_BASE})` : ''}.`
+}
+
+$('#dcPush').addEventListener('click', () => {
+  synth.click()
+  run.pushOn()
+  drainRun()
+  go('play')
+  banner('PUSH ON', 'every ball from here is surplus — and surplus buys parts')
+})
+$('#dcBank').addEventListener('click', () => {
+  synth.click()
+  const n = run.ballsLeft
+  run.bank()
+  // bank() clears the floor, which emits 'draft'; drainRun's handler is what
+  // navigates to the back room. Doing it here as well would be two places
+  // deciding the same thing, and they would drift.
+  drainRun()
+  banner(`${n} BANKED`, 'they ride along to the next floor')
+})
+
 // ── the back room ──────────────────────────────────────────────────────────
 
 function syncBackroom () {
@@ -228,10 +349,14 @@ function syncBackroom () {
     ? `OVERTIME ${run.floor - FLOORS} CLEARED`
     : `FLOOR ${run.floor} CLEARED`
   const left = run.picksLeft
+  const surplus = run.surplusPicks()
   $('#brSub').textContent =
-    `${fmt(run.floorScore)} against a quota of ${fmt(run.quota)}, with ` +
-    `${run.ballsLeft} ball${run.ballsLeft === 1 ? '' : 's'} still in the tray. ` +
-    `Take ${left} part${left > 1 ? 's' : ''} — the back room deals again for each one. ` +
+    `${fmt(run.floorScore)} against a quota of ${fmt(run.quota)} — ` +
+    `×${(run.floorScore / run.quota).toFixed(1)}. ` +
+    `Take ${left} part${left > 1 ? 's' : ''}` +
+    `${surplus ? ` (${left - surplus} for the floor, ${surplus} bought with surplus)` : ''} — ` +
+    `the back room deals again for each one. ` +
+    (run.banked ? `${run.banked} balls banked. ` : '') +
     `Next floor wants ${fmt(nextQuota())}.`
   const host = $('#brOffers')
   host.textContent = ''
@@ -274,7 +399,7 @@ function afterDraft () {
 // ── the end ────────────────────────────────────────────────────────────────
 
 function endRun () {
-  const unlocked = recordRun(state.meta, run)
+  const unlocked = recordRun(state.meta, run, Date.now())
   save()
   $('#roHead').textContent = run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
   $('#roScore').textContent = fmt(run.score)
@@ -562,7 +687,17 @@ const THRESHOLD = thresholdCrestSpeed()
 function frame (now) {
   requestAnimationFrame(frame)
   const t = now / 1000
-  const dt = Math.min(0.05, t - lastT || 0.016)
+  // Clamped at BOTH ends. The ceiling has always been here — a backgrounded tab
+  // returns with a huge delta and the physics must not try to integrate it in
+  // one go. The FLOOR is new, and it was a real defect: `t - lastT` can come
+  // back negative whenever something else has advanced the clock (the manual
+  // tick() below, a tab restore, a system clock step), and a negative dt runs
+  // the simulation BACKWARDS. Observed live: `sinceLaunch` at −2.383 s, so the
+  // launcher had to wait two and a half seconds to be allowed to fire again,
+  // the board filled with balls that had integrated in reverse, and the foul
+  // rate read 75% where the instrument measures 4%. It presented as a channel
+  // jam, which is a real mechanic, which is what made it convincing.
+  const dt = Math.max(0, Math.min(0.05, t - lastT || 0.016))
   lastT = t
   tick(dt, t)
 }
@@ -583,6 +718,11 @@ function frame (now) {
  * floor in a loop faster than real time.
  */
 function tick (dt, t = lastT) {
+  // Never advance the simulation by a non-positive step, whoever asked. The
+  // Machine's clocks (`sinceLaunch`, the heat decays, the round timers) all
+  // assume monotonic time and none of them are written to survive going
+  // backwards — see frame() for what that looked like when it happened.
+  if (!(dt > 0)) return
   if (state.screen !== 'play' || !machine) return
 
   synth.frame()
@@ -666,6 +806,20 @@ function drainRun () {
         break
       }
 
+      case 'quotaMet':
+        // The launcher stops and the board freezes here. Freezing rather than
+        // letting play continue behind the choice is deliberate: balls in
+        // flight are still worth points, and a decision made while the number
+        // you are deciding about is still moving is not a decision.
+        machine.cancelCharge()
+        firingHeld = false
+        renderer.kick(0.5)
+        renderer.lampBurst(1)
+        synth.koatari(state.varnish)
+        syncDecide(ev)
+        go('decide')
+        break
+
       case 'floorCleared':
         renderer.kick(0.6)
         renderer.lampBurst(1)
@@ -673,9 +827,9 @@ function drainRun () {
         break
 
       case 'draft':
-        // Straight to the back room. The floor is over the instant the quota
-        // falls; leaving the player firing into a decided floor would be the
-        // machine wasting their time on a result it already has.
+        // The back room. Reached either by banking the tray or by pushing on
+        // until it was empty — the floor is genuinely over by the time this
+        // fires, which is why it no longer cuts the player off mid-floor.
         machine.cancelCharge()
         firingHeld = false
         syncBackroom()

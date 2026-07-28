@@ -14,10 +14,27 @@ the tray runs out and the **back room** deals you parts — another bucket, wide
 chain, or the life nails bent another quarter-millimetre past legal. Then the next floor, which
 wants thirty per cent more.
 
-Floor 1 is a knife fight: measured, it costs **65% of the tray** to clear. Floor 12 costs **4%**,
-because by then the parts have compounded past the wall and the machine is coming apart in your
-favour. Clearing twelve **banks the win** and the floors keep coming — OVERTIME has no ceiling,
-and the auto-player reaches floor 52 against a billion-point quota before the wall catches up.
+**Meeting the quota does not end the floor. It opens a choice.**
+
+*Push on* and keep firing into a floor you have already beaten: surplus score buys extra parts,
+doubling — twice the quota for one more, four times for two, eight for three. *Bank the tray* and
+every remaining ball carries into the next floor on top of its own allowance.
+
+Neither is right. Parts compound, so a part taken early is worth more than the same part taken
+late; balls are a hedge, and the floors get harder. A player who always banks is under-built by
+floor 6, and one who always pushes has no margin the first time the board refuses to cooperate.
+Unspent balls are worth *balls or score, never both* — otherwise it is not a trade, just a number
+that goes up either way.
+
+Every run this browser has seen is kept locally: the best one on the title screen, the top ten in
+full under **RECORDS**, with per-cabinet bests kept apart. No account, no server, nothing leaves
+the machine.
+
+Floor 1 is a knife fight — measured, about two runs in three survive it, and it eats most of the
+tray. Floor 12 costs a couple of per cent, because by then the parts have compounded past the
+wall and the machine is coming apart in your favour. Clearing twelve **banks the win** and the
+floors keep coming: OVERTIME has no ceiling, and a run that keeps pushing on ends up scoring in
+the billions before the wall finally catches it.
 
 Six cabinets unlock as you go, and every one is a real class of Japanese machine: 街台, 一発台,
 羽根物, 権利物, デジパチ, and finally 裏物 — the back-room machines with unauthorised ROMs, fitted
@@ -188,7 +205,7 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 75 tests: physics, determinism, varnish law, value learning,
+npm test                        # 85 tests: physics, determinism, varnish law, value learning,
                                 #   the pull, the fire-rate contracts, the Shepard illusion,
                                 #   the two conditioning laws, and the run — including that a
                                 #   Run may expose no presentation surface and a Machine may
@@ -203,6 +220,7 @@ node tools/loadout-audit.js     # the wedge sweep across EVERY board a run can b
 node tools/run-sim.js --curve   # play whole runs; print the difficulty curve and its crossover
 node tools/run-sim.js --power   # what a part is actually worth, measured
 node tools/run-sim.js --sites   # per-bucket entry counts — the real reachability answer
+node tools/run-sim.js --push bank|push|thrifty   # the push-or-bank policy the auto-player uses
 ```
 
 `loadout-audit.js` is the one instrument here that is a **gate** rather than a report, and it

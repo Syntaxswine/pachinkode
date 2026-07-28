@@ -5,6 +5,7 @@
 //   node tools/run-sim.js --curve              # the difficulty curve, per floor
 //   node tools/run-sim.js --sites              # per-bucket entry counts
 //   node tools/run-sim.js --greedy value       # a different drafting brain
+//   node tools/run-sim.js --push bank|push|thrifty   # the push-or-bank policy
 //
 // ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
 //
@@ -68,6 +69,31 @@ const BRAINS = {
 }
 const BRAIN = BRAINS[arg('greedy', 'balanced')] || BRAINS.balanced
 
+// ── the push-or-bank policy ─────────────────────────────────────────────────
+//
+// Meeting the quota no longer ends a floor; it opens a choice. Surplus score
+// buys extra parts (doubling: 2× the quota for one, 4× for two, 8× for three),
+// and banking carries the rest of the tray into the next floor.
+//
+// There is no obviously correct answer, which is the point, so the tool
+// measures three policies rather than assuming one. `thrifty` is the default
+// because it is the conservative read — bank unless the next part looks
+// reachable — and a curve that only works for the greedy policy is not a curve.
+const PUSH = {
+  bank: () => false,
+  push: () => true,
+  thrifty: (run) => {
+    const at = run.nextPickAt()
+    if (at === null) return false                 // ceiling reached; bank it
+    // Extrapolate from this floor's own rate: can the tray in hand plausibly
+    // cover the gap to the next part? Rough on purpose — the player is
+    // estimating too, from the same two numbers the screen prints.
+    const perBall = run.floorScore / Math.max(1, run.launched)
+    return (at - run.floorScore) < perBall * run.ballsLeft * 0.7
+  }
+}
+const PUSH_POLICY = PUSH[arg('push', 'thrifty')] || PUSH.thrifty
+
 /**
  * Play one floor to its conclusion. Returns when the run leaves 'playing'.
  *
@@ -110,6 +136,14 @@ function playFloor (run, seed, siteTally) {
       siteTally[ev.site] = (siteTally[ev.site] || 0) + 1
     }
     run.observe(evs, DT, { inFlight: m.world.balls.length })
+    // The decision, taken by policy. Left unanswered the floor hangs here —
+    // which is exactly what a player staring at the screen is doing, except
+    // they eventually click. (Unhandled, the outer loop re-played floor 1
+    // three hundred and ninety-seven times and reported a 0% clear rate.)
+    if (run.status === 'decision') {
+      if (PUSH_POLICY(run)) run.pushOn(); else run.bank()
+    }
+    if (run.status !== 'playing') break
     if (run.ballsLeft <= 0 && m.world.balls.length === 0) break
     if (m.launched >= launchCap && m.world.balls.length === 0) break
   }
@@ -129,7 +163,12 @@ function playRun (cabKey, seed, siteTally) {
   // OVERTIME is unbounded by design, so this loop needs a stop and the stop
   // has to be VISIBLE. A batch tool that silently truncates a run reports
   // "cleared 100%" for a floor it simply stopped watching, which reads as data.
-  const FLOOR_CAP = FLOORS + 120
+  // Overridable, because OVERTIME got dramatically longer once balls could be
+  // banked: a deep run carries a tray big enough that each floor is a genuine
+  // simulated hour, and 16 of them against a 132-floor cap does not finish. The
+  // curve only needs the first twelve; --cap raises it when the question really
+  // is how deep overtime goes.
+  const FLOOR_CAP = num('cap', FLOORS + 24)
   let guard = 0
   while (run.status !== 'failed' && guard++ < FLOOR_CAP) {
     const floor = run.floor
@@ -141,6 +180,7 @@ function playRun (cabKey, seed, siteTally) {
       score: run.floorScore,
       cleared: run.status === 'cleared',
       launched: stats.launched,
+      launchedAtQuota: run.launchedAtQuota || stats.launched,
       bestChain: run.bestChain,
       parts: run.loadout.parts.length
     })
@@ -239,7 +279,7 @@ if (flag('curve')) {
   const N = num('n', 24)
   const cab = arg('cab', 'floor')
   console.log(`\n  difficulty curve — ${CABINETS[cab].label}, ${N} runs, ` +
-    `${arg('greedy', 'balanced')} drafting, ${arg('rate', 'arcade')} fire rate`)
+    `${arg('greedy', 'balanced')} drafting, ${arg('push', 'thrifty')} push, ${arg('rate', 'arcade')}`)
   console.log(`  quota = ${nf(QUOTA_BASE)} × ${QUOTA_GROWTH}^(floor−1) × ` +
     `${CABINETS[cab].difficulty}   ·   ${BALLS_BASE} balls + parts\n`)
   // ── the metric, and why it is not score/quota ────────────────────────────
@@ -270,14 +310,14 @@ if (flag('curve')) {
       reached[t.floor] = (reached[t.floor] || 0) + 1
       if (t.cleared) {
         cleared[t.floor] = (cleared[t.floor] || 0) + 1
-        bump(cost, t.floor, t.launched / t.balls)
+        bump(cost, t.floor, t.launchedAtQuota / t.balls)
       }
     }
     if (run.cleared) wins++
     scores.push(run.score)
   }
   const mean = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
-  console.log('   floor   quota      reached  cleared   tray spent to clear')
+  console.log('   floor   quota      reached  cleared   tray spent TO MEET THE QUOTA')
   const deepest = Math.max(...Object.keys(reached).map(Number))
   for (let f = 1; f <= deepest; f++) {
     if (!reached[f]) continue

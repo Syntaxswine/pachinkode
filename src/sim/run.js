@@ -46,17 +46,37 @@
 // — four floors at 50% means six per cent of runs see floor 5 — so a brutal
 // early failure rate does not produce a hard game, it produces a game nobody
 // sees past the second screen. The early difficulty lives in the MARGIN
-// instead: at the current constants floor 1 costs 65% of the tray and floors
-// 2–5 routinely cost MORE than the whole allowance (the tray is being
-// stretched by BALL RETURN refunds), while floor 12 costs 4%.
+// instead: what a floor COSTS to meet, as a fraction of its tray.
 //
 //     node tools/run-sim.js --curve
 //
-// prints all of it. Measured at the current constants over 18 runs: floor-1
-// clear 72%, cost-to-clear falling 65% → 4% by floor 12 and on down to 2% in
-// overtime, 8 of 18 runs cleared all twelve. If a retune pushes the crossover
-// past floor 9 the run has become a wall; below floor 4 the early game has
-// stopped being hard. Both are regressions and both are visible in one command.
+// prints all of it. Measured at the current constants (10 runs, thrifty push):
+//
+//     floor  1   69% of the tray to meet the quota,  70% of runs clear it
+//     floor  2  205%   ← the real wall, and it is not floor 1
+//     floor  3  155%
+//     floor  4   46%
+//     floor  6   57%
+//     floor  7    9%   ← crossover
+//     floor 12    1%
+//
+// Floors 2–3 costing MORE than a full tray is not a bug: BALL RETURN refunds
+// stretch the allowance, so a floor can spend twice what it started with. The
+// shape worth noticing is that floor 1 is a FILTER and floors 2–3 are the
+// CRUNCH — the run's hardest moment arrives after the player has had one part
+// and thinks they understand it.
+//
+// If a retune pushes the crossover past floor 9 the run has become a wall;
+// below floor 4 the early game has stopped being hard. Both are regressions
+// and both are visible in one command.
+//
+// One caution for whoever retunes: the cost column measures launches spent
+// when the QUOTA WAS MET (`launchedAtQuota`), not when the floor ended. Once
+// PUSH ON existed, cost-at-floor-end measured the player's policy rather than
+// the board's difficulty — a player who pushes spends the whole tray by
+// definition. Measured across all three push policies the clear rate and
+// crossover are identical, which is the check that the metric is now reading
+// the right thing.
 
 import { resolveLoadout, drawOffers } from './loadout.js'
 import { makeRng } from './rng.js'
@@ -142,6 +162,9 @@ export function picksFor (floor) {
   return Math.min(3, 1 + Math.floor(floor / 3))
 }
 
+/** Ceiling on parts bought with surplus score, on top of `picksFor`. */
+export const MAX_SURPLUS_PICKS = 3
+
 export class Run {
   /**
    * @param cabinet  a cabinet definition from cabinets.js
@@ -168,13 +191,16 @@ export class Run {
     this.bestChain = 0
     this.chainT = 0
 
-    this.status = 'playing'     // playing | cleared | failed
+    this.status = 'playing'     // playing | decision | cleared | failed
     this.cleared = false        // has floor 12 been beaten? banked, permanent
+    this.metQuota = false       // this floor's quota has been met at least once
+    this.banked = 0             // balls carried into the next floor
     this.offers = null          // the current draft, or null
     this.picksLeft = 0          // parts still to take from this floor's back room
     this.floorScore = 0
     this.totalEvents = 0
     this.launched = 0
+    this.launchedAtQuota = 0
     this.inFlight = 0
     this.refundPool = 0
     this.events = []
@@ -208,8 +234,111 @@ export class Run {
     this.floorScore += n
     this.totalEvents++
     this.emit('score', { n, kind, site, x, y, chain: this.chain, mult: this.mult, total: this.floorScore })
-    if (this.floorScore >= this.quota && this.status === 'playing') this.clearFloor()
+    // Meeting the quota does not end the floor. It opens a decision — see
+    // meetQuota() — and only the first time, because the score keeps climbing
+    // afterwards if the player chooses to push on.
+    if (this.floorScore >= this.quota && !this.metQuota) this.meetQuota()
     return n
+  }
+
+  // ── THE DECISION ──────────────────────────────────────────────────────────
+  //
+  // The floor's real question, and it only exists because balls are a clock
+  // and points are a currency:
+  //
+  //   PUSH ON — keep firing into a floor you have already beaten. Every ball
+  //             spent past the quota is surplus score, and surplus BUYS PARTS.
+  //   BANK    — stop now and carry the rest of the tray into the next floor.
+  //
+  // Neither is right. Parts compound, so an extra part early is worth more
+  // than an extra part late; balls are a hedge against a floor going badly,
+  // and the floors get harder. A player who always banks is under-built by
+  // floor 6; a player who always pushes has no margin the first time the board
+  // does not cooperate.
+  //
+  // This is also why the old leftover bonus is GONE. It paid score for unspent
+  // balls, which meant balls were worth score AND balls at the same time —
+  // there was no trade, just a number that went up either way. A ball is now
+  // worth exactly one of the two things, and the player picks which.
+
+  /** The quota is met. Stop the launcher and ask. */
+  meetQuota () {
+    this.metQuota = true
+    // What the quota COST, frozen here. Once the decision exists, launches
+    // spent after this point are a policy choice rather than a measure of how
+    // hard the floor was — a player who pushes on spends the whole tray by
+    // definition, so cost-at-floor-end stopped meaning anything the moment
+    // PUSH ON existed. tools/run-sim.js reads this instead.
+    this.launchedAtQuota = this.launched
+    this.status = 'decision'
+    this.emit('quotaMet', {
+      floor: this.floor,
+      score: this.floorScore,
+      quota: this.quota,
+      ballsLeft: this.ballsLeft,
+      picks: this.picksEarned(),
+      nextPickAt: this.nextPickAt()
+    })
+  }
+
+  /**
+   * Parts earned for this floor: a base by depth, plus surplus.
+   *
+   * The base (`picksFor`) is what the difficulty curve was measured against and
+   * must not move — it is the mechanism that makes the two curves cross at all.
+   * Surplus picks are ON TOP, and they double: 2× the quota buys one extra part,
+   * 4× buys two, 8× buys three. Doubling rather than a flat step is what keeps
+   * the choice live at every depth — late floors clear on 4% of the tray, so a
+   * linear threshold would be met by accident and the decision would evaporate
+   * exactly when the player finally has balls to gamble with.
+   */
+  picksEarned () {
+    return picksFor(this.floor) + this.surplusPicks()
+  }
+
+  surplusPicks () {
+    if (this.quota <= 0) return 0
+    const ratio = this.floorScore / this.quota
+    if (ratio < 2) return 0
+    return Math.min(MAX_SURPLUS_PICKS, Math.floor(Math.log2(ratio)))
+  }
+
+  /** The score at which one more part is earned — printed, so the bet is legible. */
+  nextPickAt () {
+    const n = this.surplusPicks()
+    if (n >= MAX_SURPLUS_PICKS) return null
+    return Math.ceil(this.quota * Math.pow(2, n + 1))
+  }
+
+  /** Keep firing into a floor already won. Surplus buys parts. */
+  pushOn () {
+    if (this.status !== 'decision') return false
+    this.status = 'playing'
+    this.emit('pushOn', { floor: this.floor, ballsLeft: this.ballsLeft })
+    return true
+  }
+
+  /**
+   * Stop now; the rest of the tray carries into the next floor.
+   *
+   * ── WHY THE CARRY IS CAPPED ─────────────────────────────────────────────
+   *
+   * At one full tray, and it has to be. Uncapped, the carry is a geometric
+   * series that converges on a fixed point: a floor cleared on 4% of the tray
+   * hands 96% of it forward, so `next = BALLS_BASE + 0.96 × prev` settles
+   * somewhere near four THOUSAND balls. At the arcade fire rate that is a
+   * thirteen-minute floor — for the player, and for the instrument, which
+   * simply stopped finishing.
+   *
+   * A ceiling of one base tray means the best possible bank doubles your
+   * allowance and no more. That keeps the decision worth making (doubling a
+   * floor's clock is enormous) while keeping a floor a thing that ends.
+   */
+  bank () {
+    if (this.status !== 'decision') return false
+    this.banked = Math.min(Math.max(0, this.ballsLeft), BALLS_BASE)
+    this.clearFloor()
+    return true
   }
 
   /**
@@ -285,22 +414,18 @@ export class Run {
 
   clearFloor () {
     this.status = 'cleared'
+    this.picksLeft = this.picksEarned()
     this.emit('floorCleared', {
       floor: this.floor,
       score: this.floorScore,
       quota: this.quota,
       over: this.floorScore - this.quota,
-      ballsLeft: this.ballsLeft
+      ratio: this.quota > 0 ? this.floorScore / this.quota : 1,
+      banked: this.banked,
+      picks: this.picksLeft,
+      basePicks: picksFor(this.floor),
+      surplusPicks: this.surplusPicks()
     })
-    // Unspent balls are worth points. Without this a player who clears a floor
-    // on ball 20 of 160 is rewarded identically to one who scraped it on ball
-    // 159, and the entire skill of the game — efficiency — pays nothing.
-    const bonus = Math.round(this.ballsLeft * 12 * this.loadout.scoreMult)
-    if (bonus > 0) {
-      this.score += bonus
-      this.emit('leftoverBonus', { balls: this.ballsLeft, n: bonus })
-    }
-    this.picksLeft = picksFor(this.floor)
     this.deal()
   }
 
@@ -382,20 +507,37 @@ export class Run {
     }
     this.status = 'playing'
     this.floorScore = 0
+    this.metQuota = false
     this.quota = quotaFor(this.floor, this.loadout, this.cabinet.difficulty || 1)
-    this.ballsLeft = ballsFor(this.floor, this.loadout)
+    // Banked balls ride along. This is the other half of the trade the player
+    // made on the last floor, and it is why they are added to the allowance
+    // rather than replacing it — banking is a bonus on top of the floor's own
+    // tray, not a substitute for it.
+    const carried = this.banked
+    this.banked = 0
+    this.ballsLeft = ballsFor(this.floor, this.loadout) + carried
     this.ballsAtStart = this.ballsLeft
     this.launched = 0
+    this.launchedAtQuota = 0
     this.refundPool = 0
     this.chain = 0
     this.chainT = 0
     this.emit('floorStart', {
-      floor: this.floor, quota: this.quota, balls: this.ballsLeft,
+      floor: this.floor, quota: this.quota, balls: this.ballsLeft, carried,
       overtime: this.floor > FLOORS
     })
   }
 
+  /**
+   * The tray is empty.
+   *
+   * If the quota was already met, this is not a failure — it is a player who
+   * chose to push on and spent everything doing it. They get the floor, and
+   * whatever surplus picks the extra balls bought. Without this check, choosing
+   * PUSH ON and succeeding at it would end the run.
+   */
   fail () {
+    if (this.metQuota) { this.banked = 0; this.clearFloor(); return }
     this.status = 'failed'
     this.emit('runFailed', {
       floor: this.floor, score: this.score, cleared: this.cleared,
