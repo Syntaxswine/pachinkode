@@ -43,7 +43,9 @@ of 1985, appendix 4 — so these are not estimates:
 - Launch rate is capped at **100 balls per minute**, the pending-ball queue at **4**, the
   kakuhen probability swing at **10×**, and a jackpot at **1500 balls**. All regulation.
 - The economy is calibrated against the real type-test bands (1 h: 33–220%, 4 h: 40–150%,
-  10 h: 50–133%) by `tools/calibrate.js`, which measures rather than asserts.
+  10 h: 50–133%) by `tools/calibrate.js`, which measures rather than asserts. The gentle machine
+  returns **83.9% ± 15.4%** over eight runs of 24 000 balls. That spread is not sloppiness — it
+  is why the regulation constrains variance and not just the mean.
 
 Nothing is scripted. There is no code path that nudges a ball toward a pocket. If it goes in, it
 went in.
@@ -60,9 +62,9 @@ went in.
 - **The near-miss, with its agency gate.** Near-misses are rated *less pleasant* and *more
   motivating* at the same time — but only when the player chose the gamble. The HUD shows those as
   two separate needles so you can watch them diverge.
-- **A real loss disguised as a win.** A start-pocket entry pays 3 balls and costs about 30 to
-  reach. The machine throws a party for a net loss of 27. At varnish 0 it gets a sour tone
-  instead, which is the Dixon (2015) unmasking manipulation wired to a slider.
+- **A real loss disguised as a win.** A start-pocket entry pays 3 balls and costs about 35 to
+  reach. The machine throws a party for a net loss of some thirty. At varnish 0 it gets a sour
+  tone instead, which is the Dixon (2015) unmasking manipulation wired to a slider.
 
 Every constant is cited next to itself. **[docs/SCIENCE.md](docs/SCIENCE.md)** is the full ledger,
 including what is PRIMARY, what is PARTIAL, and what is honestly just a design choice.
@@ -117,7 +119,7 @@ node tools/serve.js 8790
 The verification tools are part of the deliverable, not scaffolding:
 
 ```bash
-npm test                        # 21 tests: physics, determinism, varnish law, the Shepard illusion
+npm test                        # 26 tests: physics, determinism, varnish law, value learning, the Shepard illusion
 node tools/board-audit.js       # find ball traps in the geometry before they find your statistics
 node tools/calibrate.js         # measure RTP against the real regulatory bands
 node tools/headless.js --sweep  # dial sweep: where every ball ends up, per dial position

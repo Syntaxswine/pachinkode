@@ -219,8 +219,9 @@ export class Synth {
    * A ball found the start pocket.
    *
    * This is the game's own loss disguised as a win, and it is not a contrivance:
-   * a heso entry pays three balls and costs, on average, about thirty to obtain.
-   * The event is a net loss of roughly 27 balls and the machine throws a party.
+   * a heso entry pays three balls, and tools/calibrate.js measures a 2.9% heso
+   * rate at the best dial setting — so it costs about thirty-five balls to obtain.
+   * The event is a net loss of some thirty balls, and the machine throws a party.
    *
    * At full varnish it gets the party. At varnish 0 it gets a flat, slightly sour
    * tone — which is Dixon et al. (2015), n=157, where attaching a negative sound

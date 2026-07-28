@@ -76,7 +76,7 @@ const SEG_R = 0.0022
  */
 const clearHalf = (clear, segR = SEG_R) => clear / 2 + segR
 /** Furniture must stay inside this radius or it fouls the launch channel. */
-export const CLEAR_R = R.r - R.gap - BALL_R - 0.003   // ≈ 0.181 m
+export const CLEAR_R = R.r - R.gap - BALL_R - 0.003   // = 0.1775 m
 
 const px = (deg, rad) => R.cx + Math.cos(deg * D2R) * rad
 const py = (deg, rad) => R.cy + Math.sin(deg * D2R) * rad
@@ -116,9 +116,10 @@ function clearWedges (world, parts, verbose = false) {
   const BALL_D = BALL_R * 2
   const MIN_CLEAR = BALL_D + 0.0018        // must pass a ball with margin
   const removed = []
-  const keep = []
-  const protectedNails = new Set(parts.lifeNails)
+  const protectedNails = new Set([...parts.lifeNails, ...(parts.featureNails || [])])
 
+  // Pass 1 — nails against walls and windmills.
+  let keep = []
   for (const n of world.nails) {
     if (protectedNails.has(n)) { keep.push(n); continue }
     let worst = Infinity
@@ -131,18 +132,56 @@ function clearWedges (world, parts, verbose = false) {
       const gap = Math.hypot(n.x - ro.x, n.y - ro.y) - n.r - ro.r - 0.0022
       if (gap < worst) worst = gap
     }
-    if (worst > 0 && worst < MIN_CLEAR) { removed.push({ nail: n, gap: worst }); continue }
+    if (worst > 0 && worst < MIN_CLEAR) { removed.push({ nail: n, gap: worst, against: 'wall' }); continue }
     keep.push(n)
   }
 
+  // Pass 2 — nails against EACH OTHER.
+  //
+  // This pass was missing for the first day of the board's life, and a 60 000-ball
+  // soak found what small runs could not: 1.1% of balls coming to rest on a pair
+  // of nails 11.3 mm apart centre-to-centre — a 9.5 mm clear span, narrower than
+  // the ball, which sits on top and never falls through. The offender was a
+  // hand-placed right-route nail landing between two grid nails.
+  //
+  // The rule is identical to the wall rule, which is the point: it is the same
+  // defect, and the tool only saw half of it. The regular grid can never trigger
+  // this (its tightest span is 18.8 mm) — it fires exactly where an authored nail
+  // meets a generated one, which is precisely where a human stops checking.
+  //
+  // Feature nails win ties, so the deliberate ones survive and the grid yields.
+  const survivors = []
+  for (let i = 0; i < keep.length; i++) {
+    const a = keep[i]
+    if (protectedNails.has(a)) { survivors.push(a); continue }
+    let culled = false
+    for (let j = 0; j < keep.length; j++) {
+      if (i === j) continue
+      const b = keep[j]
+      // Only yield to a nail that is itself surviving: protected ones, or ones
+      // already accepted. Prevents both halves of a pair being removed.
+      if (!protectedNails.has(b) && !survivors.includes(b)) continue
+      const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r
+      if (gap > 0 && gap < MIN_CLEAR) {
+        removed.push({ nail: a, gap, against: 'nail' })
+        culled = true
+        break
+      }
+    }
+    if (!culled) survivors.push(a)
+  }
+  keep = survivors
+
   if (removed.length !== 0) {
+    const kept = new Set(keep)
     world.nails = keep
-    parts.nails = parts.nails.filter(n => keep.includes(n))
+    parts.nails = parts.nails.filter(n => kept.has(n))
     world.markDirty()
   }
   if (verbose && removed.length) {
     for (const r of removed) {
-      console.log(`  wedge culled at (${r.nail.x.toFixed(3)}, ${r.nail.y.toFixed(3)}) gap ${(r.gap * 1000).toFixed(1)} mm`)
+      console.log(`  wedge culled at (${r.nail.x.toFixed(3)}, ${r.nail.y.toFixed(3)}) ` +
+        `gap ${(r.gap * 1000).toFixed(1)} mm vs ${r.against}`)
     }
   }
   return removed
@@ -357,8 +396,8 @@ function buildNailField (world, parts) {
   // The inochi-kugi ("life nails"): the funnel directly above the start pocket.
   // The most consequential nails on any pachinko board. BOARD.hesoGap is the
   // clear span between their surfaces, so the centres sit half a gap plus one
-  // nail radius apart. At the default 11.8 mm against an 11.0 mm ball that is
-  // four tenths of a millimetre of clearance per side.
+  // nail radius apart. At the default 12.5 mm against an 11.0 mm ball that is
+  // three quarters of a millimetre of clearance per side.
   //
   // Bending these is how parlours used to tune payout, and it is illegal — an
   // unauthorised modification under Article 9 of the Entertainment Business Act,
@@ -377,9 +416,15 @@ function buildNailField (world, parts) {
 
   // The right-hand route: a sparse ladder of nails that catches balls coming
   // down the outer wall on the migi-uchi line and walks them into the attacker.
+  // Marked as feature nails so the wedge sweep culls the regular grid around
+  // them rather than removing them — an authored nail landing in a generated
+  // field is exactly where nail-on-nail wedges appear.
+  parts.featureNails = []
   for (let i = 0; i < 4; i++) {
     const a = 22 + i * 11
-    parts.nails.push(world.addNail(px(a, 0.176 - i * 0.004), py(a, 0.176 - i * 0.004)))
+    const n = world.addNail(px(a, 0.176 - i * 0.004), py(a, 0.176 - i * 0.004))
+    parts.nails.push(n)
+    parts.featureNails.push(n)
   }
 }
 

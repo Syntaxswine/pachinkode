@@ -213,13 +213,17 @@ export class Machine {
         const st = this.parts.stage
         const x = st.x + this.rng.range(-st.halfWidth, st.halfWidth)
         const vx = this.rng.range(-0.10, 0.10)
-        this.world.spawn(makeBall(x, st.y, vx, 0.05, { warped: true }))
-        this.emit('warp', { x: ev.x, y: ev.y })
+        const out = this.world.spawn(makeBall(x, st.y, vx, 0.05, { warped: true }))
+        // `from` lets the value model carry the ball's history across the warp.
+        // It is the same ball: the trip that found the warp is part of what made
+        // it valuable, and dropping the history here both loses that credit and
+        // orphans the visit set.
+        this.emit('warp', { x: ev.x, y: ev.y, ball: ev.ball, into: out })
         break
       }
       case 'chucker':
         this.pay(HESO_PAY, 'heso')
-        this.emit('heso', { x: ev.x, y: ev.y, holds: this.holds })
+        this.emit('heso', { x: ev.x, y: ev.y, holds: this.holds, ball: ev.ball })
         if (this.holds < HOLD_MAX) {
           this.holds++
         } else {
@@ -230,14 +234,14 @@ export class Machine {
         break
       case 'tulip':
         this.pay(TULIP_PAY, 'tulip')
-        this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor })
+        this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor, ball: ev.ball })
         break
       case 'attacker':
         if (this.jackpot) {
           this.pay(this.S.payPerEntry, 'attacker')
           this.jackpot.entries++
           this.jackpot.shutAt = this.time + ATTACKER_SHUT_DELAY
-          this.emit('attacker', { x: ev.x, y: ev.y, entries: this.jackpot.entries })
+          this.emit('attacker', { x: ev.x, y: ev.y, entries: this.jackpot.entries, ball: ev.ball })
           if (this.jackpot.entries >= this.S.entriesPerRound) this.endRound()
         }
         break
@@ -245,7 +249,7 @@ export class Machine {
         // A shot too weak to crest never entered play. Real machines refund it.
         this.tokens++
         this.spent--
-        this.emit('foul', { x: ev.x, y: ev.y })
+        this.emit('foul', { x: ev.x, y: ev.y, ball: ev.ball })
         break
       case 'out':
       case 'stuck':

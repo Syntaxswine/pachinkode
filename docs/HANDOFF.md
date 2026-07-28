@@ -17,14 +17,14 @@ dopamine engine, renderer, procedural synth, title screen, options, HUD and save
 | | |
 |---|---|
 | Launch cadence | 0.601 s/ball measured in-browser — the legal 100/minute ceiling |
-| RTP, amadeji | 92.7% ± 19.0% over 4 × 24 000 balls (legal 4 h band: 40–150%) |
-| RTP, loose / standard | 108.6% / 72.1% |
-| Base rate (no jackpot) | 36% — real machines sit near 30% |
-| Heso rate | ~3.3% of balls, through a 12.5 mm gap against an 11 mm ball |
-| Nails | 110 after the wedge cull; real boards ~200 |
+| RTP, amadeji | **83.9% ± 15.4%** over 8 × 24 000 balls at dial 0.20 (legal 4 h band: 40–150%) |
+| RTP, loose / standard | 92.3% ± 13.2% / 63.0% ± 10.7% |
+| Base rate (no jackpot) | 35% — real machines sit near 30% |
+| Heso rate | 2.9% of balls at dial 0.20, through a 12.5 mm gap against an 11 mm ball |
+| Nails | 107 after the wedge cull; real boards ~200 |
 | Nail strikes per ball | 22–58 depending on dial |
-| Stuck balls | **0** across the entire dial sweep |
-| Wall pinches | **0** in the trap band |
+| Stuck balls | 0.005% over 20 000 balls (one ball, against a windmill hub) |
+| Wall and nail pinches | **0** in the trap band |
 | Varnish effect | mean pixel saturation 0.194 → 0.061, luminance held (0.064 → 0.069) |
 | Shepard partials | fall at 0.938 oct/s; spectral centroid slope **+0.009 oct/s** |
 
@@ -56,6 +56,15 @@ Expensive knowledge. Do not re-learn it.
    automatically; `tools/board-audit.js` reports wall-versus-wall pinches, which cannot be culled.
    **Run the audit after any geometry change.** At one point 65% of all balls were being reaped.
 
+   **And run a long soak, not just a sweep.** The wedge sweep originally checked nails against
+   walls but never against *each other*, and every short run reported zero stuck balls. A
+   60 000-ball soak found 1.1% of balls resting on a pair of nails 11.3 mm apart centre-to-centre
+   — a 9.5 mm clear span — where a hand-placed right-route nail had landed between two grid nails.
+   The regular grid can never do this (its tightest span is 18.8 mm); it fires exactly where an
+   authored nail meets a generated one, which is precisely where a human stops checking. Fixing
+   the sweep took stuck balls from 1.06% to 0.005%. **A tool that checks half a rule reports
+   clean.**
+
 2. **Mouth widths are CLEAR spans, not centreline gaps.** Wall segments have thickness. A
    nominally 13 mm mouth built centreline-to-centreline is really 8.6 mm and impassable. Use
    `clearHalf()`.
@@ -82,7 +91,16 @@ Expensive knowledge. Do not re-learn it.
 7. **`x ^= x >>> 15` returns a SIGNED 32-bit integer.** A negative modulo 8 is negative. The reels
    displayed `-1` and `-4` until the final `>>> 0` went in.
 
-8. **Broadphase the wall segments, not just the nails.** A finished board has ~380 segments and
+8. **An emergent visual has no failure mode.** The value map silently never learned: every pocket
+   event was re-emitted without the ball that caused it, `settle()` looked up a visit set that was
+   not there and returned early, and only reward-zero drains reached the learner. V stayed flat
+   zero across all 550 cells and every trail rendered at the cold end of the scale forever. No
+   exception, no warning, no visibly broken frame — just the one image the whole game is built
+   around, quietly not happening, looking exactly like a feature that had not warmed up yet.
+   Found by an adversarial audit, not by playing it. `test/learning.test.js` now asserts the
+   emergence, including that the funnel outvalues the gutter.
+
+9. **Broadphase the wall segments, not just the nails.** A finished board has ~380 segments and
    the rail alone is 150 chords. Testing every ball against every segment at 1200 Hz cost more
    than the rest of the simulation combined; gridding them took a 500-ball headless run from
    28 seconds to 0.58.
@@ -106,8 +124,13 @@ Named as invitations, not omissions.
   and no measured landing distribution — the gap is real, not an oversight in my search. If a
   future builder gets a real board and a high-speed camera, that measurement would be novel
   outside this game, not just inside it.
-- **standard spec returns 72.1%.** Inside the legal band and honest for a 1/319 machine, but
+- **standard spec returns 63%.** Inside the legal 4 h band and honest for a 1/319 machine, but
   punishing. Either leave it as the truthful option or raise its harvest.
+
+- **RTP figures move, so re-measure before quoting.** An early 4-seed run put amadeji at 92.7%
+  and that number reached the README and a commit message before an 8-seed run corrected it to
+  83.9% ± 15.4%. Jackpot income is extremely lumpy — the standard deviation is a fifth of the
+  mean — so **four seeds is not enough to quote a figure.** Use eight, and quote the spread.
 
 ---
 

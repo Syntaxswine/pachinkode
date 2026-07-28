@@ -34,10 +34,18 @@ const BALL_I = 0.4 * BALL_M * BALL_R * BALL_R   // solid sphere, I = (2/5)mr²
 const INV_M = 1 / BALL_M
 const INV_I = 1 / BALL_I
 
-// Angular drag: a real ball is sandwiched between the board and the glass with
-// under a millimetre of clearance, so it is always lightly rubbing something.
-// This is the honest reason spin decays fast in pachinko and not, say, in pool.
-const SPIN_DAMP = 2.2                     // 1/s
+// Angular drag.
+//
+// The tempting justification — "the ball is sandwiched against the glass" — is
+// false, and the regulation cited above says so: board-to-glass must EXCEED
+// 13 mm and not exceed 25 mm, which leaves an 11 mm ball between 2 and 14 mm of
+// out-of-plane play. It is not pinched.
+//
+// The honest reason spin decays fast here and not in, say, pool is that the board
+// is near-vertical: the ball rides against its face for most of its life and
+// clatters off the glass on every lively bounce. The figure itself is a tuning
+// knob, not a measurement, and is labelled as one.
+const SPIN_DAMP = 2.2                     // 1/s — TUNED, not measured
 const AIR_DRAG = 0.02                     // 1/s, linear; tiny but stops jitter accumulating
 
 export const MAT = {

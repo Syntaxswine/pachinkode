@@ -6,7 +6,7 @@
 // permitted to reach back into it — that is what makes the varnish switch an
 // honest control rather than a difficulty setting.
 
-import { Machine, SPECS, LAUNCH_INTERVAL } from './sim/machine.js'
+import { Machine, SPECS, LAUNCH_INTERVAL, TULIP_PAY } from './sim/machine.js'
 import { BOARD, thresholdCrestSpeed } from './sim/board.js'
 import { Dopamine } from './sim/dopamine.js'
 import { Renderer } from './render/board-render.js'
@@ -270,8 +270,15 @@ function handleEvents (events) {
       case 'heso': {
         // The value of a start-pocket entry is not the three balls it pays. It is
         // three balls plus a lottery ticket, and the ticket is worth far more.
-        const d = dop.settle(ev.ball || {}, hesoValue())
-        dop.push(hesoValue())
+        //
+        // `ev.ball` is required, not optional. An earlier `|| {}` fallback here
+        // meant every settle silently missed, the value map stayed flat zero, and
+        // the trails were permanently cold — the one image this whole game is
+        // built around simply did not happen, and nothing failed loudly enough to
+        // say so. If the ball ever goes missing again, let it throw.
+        const v = hesoValue()
+        dop.settle(ev.ball, v)
+        dop.push(v)
         renderer.flash(ev.x, ev.y, 1.2)
         renderer.kick(0.25)
         synth.heso(state.varnish)
@@ -279,12 +286,14 @@ function handleEvents (events) {
       }
 
       case 'tulip':
-        dop.push(3)
+        dop.settle(ev.ball, TULIP_PAY)
+        dop.push(TULIP_PAY)
         renderer.flash(ev.x, ev.y, 0.4)
         synth.tulip(state.varnish)
         break
 
       case 'attacker':
+        dop.settle(ev.ball, machine.S.payPerEntry)
         dop.push(machine.S.payPerEntry)
         renderer.flash(ev.x, ev.y, 1.0)
         renderer.kick(0.18)
@@ -292,6 +301,8 @@ function handleEvents (events) {
         break
 
       case 'warp':
+        // Same ball, new id. Carry its history so the route can be learned.
+        dop.carry(ev.ball, ev.into)
         renderer.flash(ev.x, ev.y, 0.25)
         break
 

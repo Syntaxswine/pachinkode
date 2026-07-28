@@ -41,7 +41,7 @@ Almost everything physical about a pachinko machine is *written into Japanese la
 | Attacker open, per jackpot round | ≤30 s | `machine.js` `ROUND_TIME` = 18 s | PRIMARY |
 | Max balls per pocket entry | 15 | `SPECS[*].payPerEntry` ≤ 15 | PRIMARY |
 | Max balls per jackpot | 1500 (10 rounds × 10 entries × 15) | all specs under it | PRIMARY |
-| Kakuhen probability swing | ≤10× | all specs at exactly 10× | PRIMARY |
+| Kakuhen probability swing | ≤10× | amadeji 5×, standard 10×, loose 5× — all inside the cap | PRIMARY |
 | Ball rental ceiling | ¥4/ball since 1978 | HUD honest ledger | PARTIAL |
 
 ### The ball mass, derived

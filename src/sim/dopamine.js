@@ -91,6 +91,27 @@ export class Dopamine {
   }
 
   /**
+   * Carry a ball's history onto its successor.
+   *
+   * A ball swallowed by a warp is destroyed and a new one is spawned on the
+   * stage. Physically it is the same ball, and the trip that found the warp is
+   * part of what made it valuable — so the cells it visited on the way must be
+   * credited with whatever it eventually earns. Without this the warp route
+   * cannot be learned at all, and every warped ball leaks its visit set.
+   */
+  carry (fromBall, toBall) {
+    if (!fromBall || !toBall) return
+    const s = this.visits.get(fromBall.id)
+    this.visits.delete(fromBall.id)
+    if (!s) return
+    const t = this.visits.get(toBall.id)
+    if (t) { for (const i of s) t.add(i) } else this.visits.set(toBall.id, s)
+  }
+
+  /** Drop a ball's history without learning from it. */
+  forget (ball) { if (ball) this.visits.delete(ball.id) }
+
+  /**
    * A ball finished. Update every cell it touched toward the realised return.
    *
    * This is every-visit Monte Carlo with a constant step size — the delta rule

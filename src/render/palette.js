@@ -116,12 +116,19 @@ export function framePalette (dop, varnish = 1) {
  * after a few hundred balls a bright thread appears above the start pocket,
  * because the machine learned it, not because anyone drew it.
  *
- * `value` is in tokens. A start-pocket entry is worth about 14 (three paid now
- * plus eleven of lottery ticket), so that sets the top of the scale.
+ * `value` is in tokens. A start-pocket entry is worth about 12 — three paid now
+ * plus nine of lottery ticket — but no cell ever reaches that, because V is the
+ * *average* return over every ball that passed through and most of them miss.
+ * Measured over 3500 balls, the busiest cell in the funnel converges near 5.3.
+ * Scaling to the theoretical 12 left the whole board in the cold third of the
+ * ramp; scaling to what the machine actually learns is what makes the thread
+ * legible. If a future builder changes the reward structure, re-measure this.
  */
+const TRAIL_TOP = 5.5
+
 export function trailColour (value, confidence, varnish = 1) {
   const v = clamp(varnish)
-  const t = clamp(value / 14)
+  const t = clamp(value / TRAIL_TOP)
   // Cold slate → warm gold as expected value rises.
   const h = 214 - t * 176
   const s = (0.10 + 0.72 * t) * v

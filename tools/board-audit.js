@@ -101,6 +101,30 @@ if (!clusters.length) {
   console.log(`  Move one of the two structures, or close the gap entirely.\n`)
 }
 
+// Nail against nail. The regular grid can never trigger this — its tightest span
+// is 18.8 mm — so anything here is an authored nail landing in a generated field,
+// which is exactly where a human stops checking. buildBoard() culls these, so a
+// clean report is the expected state; a finding means the cull was bypassed.
+const nailPinches = []
+for (let i = 0; i < world.nails.length; i++) {
+  for (let j = i + 1; j < world.nails.length; j++) {
+    const a = world.nails[i], b = world.nails[j]
+    const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r
+    if (gap > 0 && gap < DANGER_HI) nailPinches.push({ gap, a, b })
+  }
+}
+const lifePair = new Set(parts.lifeNails)
+const realNail = nailPinches.filter(p => !(lifePair.has(p.a) && lifePair.has(p.b)))
+if (!realNail.length) {
+  console.log(`  No nail-to-nail pinches either (grid pitch alone gives 18.8 mm).`)
+} else {
+  console.log(`\n  ${realNail.length} NAIL-TO-NAIL pinch(es) — a ball will rest on top and stay:`)
+  for (const p of realNail.slice(0, 12)) {
+    console.log(`    ${(p.gap * 1000).toFixed(1).padStart(5)} mm  between (${p.a.x.toFixed(3)}, ${p.a.y.toFixed(3)})` +
+      ` and (${p.b.x.toFixed(3)}, ${p.b.y.toFixed(3)})`)
+  }
+}
+
 // Report the deliberate exception so nobody "fixes" it.
 const [l, r] = parts.lifeNails
 const heso = Math.hypot(l.x - r.x, l.y - r.y) - l.r - r.r
