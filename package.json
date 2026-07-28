@@ -1,0 +1,14 @@
+{
+  "name": "pachinkode",
+  "version": "0.1.0",
+  "description": "A pachinko simulator with real physics and a switch on its own dopamine engine.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "headless": "node tools/headless.js",
+    "calibrate": "node tools/calibrate.js",
+    "serve": "node tools/serve.js"
+  },
+  "license": "MIT"
+}

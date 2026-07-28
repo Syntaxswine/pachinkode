@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PACHINKODE</title>
+<meta name="description" content="A pachinko simulator with real physics and a switch on its own dopamine engine.">
+<meta name="color-scheme" content="dark">
+<style>
+  :root {
+    --ink: #c9d1d9;
+    --dim: #6b7683;
+    --faint: #333b45;
+    --bg: #0a0d11;
+    --panel: #10151b;
+    --hot: #e8a33d;
+    --cold: #4a7fb5;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--mono); font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+  body { display: flex; align-items: stretch; justify-content: center; }
+  button { font-family: inherit; font-size: inherit; color: inherit; cursor: pointer; }
+
+  /* ── screens ── */
+  .screen { position: fixed; inset: 0; display: none; flex-direction: column;
+            align-items: center; justify-content: center; padding: 24px; z-index: 10;
+            background: radial-gradient(ellipse at 50% 40%, #131a22 0%, #06080b 75%); }
+  .screen.on { display: flex; }
+
+  #title h1 {
+    font-size: clamp(38px, 11vw, 104px); letter-spacing: 0.16em; margin: 0 0 2px;
+    font-weight: 500; color: #eef3f8; text-indent: 0.16em;
+  }
+  #title .rule { width: min(560px, 88vw); height: 1px; background: linear-gradient(90deg,
+      transparent, var(--faint) 12%, var(--faint) 88%, transparent); margin: 14px 0 16px; }
+  #title .sub { color: var(--dim); letter-spacing: 0.10em; text-align: center; line-height: 1.9;
+                max-width: 62ch; font-size: 12px; }
+  #title .jp { color: var(--faint); letter-spacing: 0.4em; font-size: 11px; margin-bottom: 10px; }
+  .menu { display: flex; flex-direction: column; gap: 2px; margin-top: 30px; width: min(300px, 80vw); }
+  .menu button {
+    background: transparent; border: 1px solid var(--faint); padding: 11px 16px;
+    letter-spacing: 0.16em; text-align: left; transition: .13s;
+  }
+  .menu button:hover, .menu button:focus-visible {
+    border-color: var(--hot); color: #fff; background: #171d25; outline: none;
+  }
+  .menu button small { color: var(--dim); letter-spacing: 0.04em; display: block;
+                       margin-top: 3px; font-size: 10px; }
+
+  /* ── options ── */
+  .sheet { width: min(660px, 94vw); max-height: 88vh; overflow-y: auto; }
+  .sheet h2 { font-size: 13px; letter-spacing: 0.24em; color: var(--dim);
+              font-weight: 500; margin: 0 0 18px; }
+  .grp { border-top: 1px solid var(--faint); padding: 15px 0 5px; }
+  .grp > .lbl { color: var(--hot); letter-spacing: 0.18em; font-size: 10px; margin-bottom: 12px; }
+  .row { display: grid; grid-template-columns: 120px 1fr 52px; gap: 12px;
+         align-items: center; margin-bottom: 11px; }
+  .row label { color: var(--dim); letter-spacing: 0.06em; font-size: 11px; }
+  .row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .note { color: var(--faint); font-size: 10px; line-height: 1.7; margin: 4px 0 12px;
+          max-width: 68ch; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 20px;
+                      background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--faint); }
+  input[type=range]::-moz-range-track { height: 2px; background: var(--faint); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+      width: 11px; height: 15px; background: var(--ink); margin-top: -7px; border-radius: 1px; }
+  input[type=range]::-moz-range-thumb { width: 11px; height: 15px; background: var(--ink);
+      border: none; border-radius: 1px; }
+  .segs { display: flex; gap: 0; flex-wrap: wrap; }
+  .segs button { background: transparent; border: 1px solid var(--faint); padding: 7px 12px;
+                 letter-spacing: .08em; font-size: 11px; margin: 0 -1px -1px 0; }
+  .segs button[aria-pressed=true] { border-color: var(--hot); color: var(--hot); background: #171d25; }
+  .backrow { margin-top: 22px; display: flex; gap: 8px; }
+  .backrow button { background: transparent; border: 1px solid var(--faint); padding: 9px 20px;
+                    letter-spacing: .16em; }
+  .backrow button:hover { border-color: var(--hot); color: #fff; }
+
+  /* ── play ── */
+  #play { position: fixed; inset: 0; display: none; }
+  #play.on { display: flex; }
+  #stage { flex: 1 1 auto; position: relative; display: flex;
+           align-items: center; justify-content: center; min-width: 0; }
+  canvas { display: block; touch-action: none; cursor: ns-resize; }
+  #panel { flex: 0 0 254px; background: var(--panel); border-left: 1px solid var(--faint);
+           padding: 14px 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 13px; }
+  .sect { border-top: 1px solid var(--faint); padding-top: 10px; }
+  .sect:first-child { border-top: none; padding-top: 0; }
+  .k { color: var(--dim); font-size: 10px; letter-spacing: .14em; margin-bottom: 6px; }
+  .big { font-size: 30px; letter-spacing: .04em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .stat { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0;
+          font-variant-numeric: tabular-nums; }
+  .stat span:first-child { color: var(--dim); }
+  .meter { height: 3px; background: #1a212a; margin: 3px 0 7px; position: relative; overflow: hidden; }
+  .meter i { position: absolute; left: 50%; top: 0; bottom: 0; background: var(--cold); }
+  .meter.uni i { left: 0; background: var(--hot); }
+  .tiny { color: var(--faint); font-size: 9.5px; line-height: 1.6; }
+  #topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 14px;
+            padding: 9px 12px; font-size: 10px; color: var(--dim); letter-spacing: .1em;
+            pointer-events: none; }
+  #topbar b { color: var(--ink); font-weight: 500; }
+  #topbar .esc { pointer-events: auto; cursor: pointer; color: var(--faint); }
+  #topbar .esc:hover { color: var(--hot); }
+  #banner { position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
+            text-align: center; pointer-events: none; letter-spacing: .3em;
+            font-size: 22px; color: var(--hot); opacity: 0; transition: opacity .25s; }
+  #banner.on { opacity: 1; }
+  #banner small { display: block; font-size: 10px; letter-spacing: .18em;
+                  color: var(--dim); margin-top: 7px; }
+  @media (max-width: 780px) {
+    #play { flex-direction: column; }
+    #panel { flex: 0 0 auto; border-left: none; border-top: 1px solid var(--faint);
+             max-height: 40vh; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<section id="title" class="screen on">
+  <div class="jp">パチンコード</div>
+  <h1>PACHINKODE</h1>
+  <div class="rule"></div>
+  <div class="sub">
+    A pachinko machine built to real dimensions, with a switch on its own dopamine engine.<br>
+    One knob. Eleven-millimetre steel. A lottery you do not control.
+  </div>
+  <nav class="menu">
+    <button data-go="play">PLAY<small>fire balls · find the threshold</small></button>
+    <button data-go="options">OPTIONS<small>sound · varnish · machine class</small></button>
+    <button data-go="about">ABOUT<small>what is real in here, and what is not</small></button>
+  </nav>
+</section>
+
+<section id="options" class="screen">
+  <div class="sheet">
+    <h2>OPTIONS</h2>
+
+    <div class="grp">
+      <div class="lbl">SOUND</div>
+      <div class="row"><label for="vMaster">MASTER</label>
+        <input type="range" id="vMaster" min="0" max="100" value="70"><output id="oMaster">70</output></div>
+      <div class="row"><label for="vImpacts">IMPACTS</label>
+        <input type="range" id="vImpacts" min="0" max="100" value="55"><output id="oImpacts">55</output></div>
+      <div class="row"><label for="vRewards">REWARDS</label>
+        <input type="range" id="vRewards" min="0" max="100" value="80"><output id="oRewards">80</output></div>
+      <div class="row"><label for="vBed">BED</label>
+        <input type="range" id="vBed" min="0" max="100" value="35"><output id="oBed">35</output></div>
+      <div class="row"><label for="vMute">MUTE</label>
+        <div class="segs"><button id="vMute" aria-pressed="false">SILENCE THE MACHINE</button></div><output></output></div>
+      <div class="note">IMPACTS is steel on brass — the rain of the nail field. BED is the drone
+        underneath, which detunes as the outcome becomes less certain.</div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">VARNISH</div>
+      <div class="row"><label for="vVarnish">PRESENTATION</label>
+        <input type="range" id="vVarnish" min="0" max="100" value="100"><output id="oVarnish">100</output></div>
+      <div class="note">
+        The dopamine layer. At 100 the machine is fully dressed: saturated colour, metallic ring,
+        a celebration when a ball finds the start pocket. At 0 the colour drains to grey, the
+        impacts become flat ticks, and the start pocket gets a sour tone instead of a fanfare.
+        <br><br>
+        <b>The physics, the odds, the payouts and the random numbers are identical at every
+        setting.</b> Same seed, same session, same money. Only the varnish changes. Slide it
+        mid-session and watch your own nervous system disagree with the arithmetic.
+        <br><br>
+        The sour tone is not editorial. Dixon et al. (2015, n=157) attached a negative sound to
+        losses-disguised-as-wins and the majority of players went back to categorising them
+        correctly, with accurate win estimates. That is this slider, at the bottom of its travel.
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">MACHINE CLASS</div>
+      <div class="segs" id="specSegs"></div>
+      <div class="note" id="specNote"></div>
+    </div>
+
+    <div class="backrow">
+      <button data-go="title">BACK</button>
+      <button id="resetSave">FORGET EVERYTHING</button>
+    </div>
+  </div>
+</section>
+
+<section id="about" class="screen">
+  <div class="sheet">
+    <h2>ABOUT</h2>
+    <div class="note" style="font-size:11.5px;line-height:1.85;color:var(--ink);max-width:74ch">
+      <p>A pachinko machine gives you exactly one control: a dial that sets how hard a steel ball is
+      fired up a rail. Everything after that is chaos and a random number generator you never touch.
+      People play for eleven hours.</p>
+
+      <p>The gap is closed with presentation, and the presentation is applied neuroscience.
+      Pachinkode builds all of it faithfully and then puts a switch on it.</p>
+
+      <p style="color:var(--dim)">WHAT IS REAL —
+      the ball is 11.00 mm and 5.471 g of solid steel, both fixed by Japanese law.
+      Nail brass, pocket mouth widths, the four-deep pending queue, the 100-balls-per-minute
+      launch ceiling, the ten-times cap on the kakuhen probability swing, and the payout bands
+      the type test enforces are all regulation. Restitution against a nail is 0.50, from
+      published measurements of chrome steel on brass at pachinko's own impact speeds.
+      Nothing is scripted: the ball goes where the physics sends it.</p>
+
+      <p style="color:var(--dim)">WHAT IS MODELLED —
+      the dopamine engine runs a temporal-difference learner over the board and reports
+      prediction error asymmetrically, because real dopamine neurons do: about 270% above
+      baseline for good surprises against 55% below for bad ones. A losing streak therefore
+      cannot arithmetically cancel a win in that channel. Colour saturation is solved from
+      Valdez &amp; Mehrabian's arousal regression rather than picked. The near-miss moves
+      pleasantness down and motivation up at the same time, which is the actual finding.</p>
+
+      <p style="color:var(--dim)">WHAT IS NOT HERE —
+      an earlier draft raised the pitch of the nail impacts as anticipation built. No
+      peer-reviewed work supports pitch contour as a reward cue in gambling; it is design
+      folklore. It was cut. What the literature does support — win-paired, predictable,
+      scaled with size, longer for bigger wins — is what you hear.</p>
+
+      <p>The trails are the point. Each ball is coloured by what the machine has learned a ball
+      in that spot is worth, and the brightness is its confidence. Play long enough and a bright
+      thread appears above the start pocket. Nobody drew it. The machine found it.</p>
+
+      <p style="color:var(--faint)">Built as an open foundation. The physics core, the economy
+      calibrator and the board-trap auditor are all in the repository, and the handoff document
+      names what the next builder should take up.</p>
+    </div>
+    <div class="backrow"><button data-go="title">BACK</button></div>
+  </div>
+</section>
+
+<section id="play">
+  <div id="stage">
+    <canvas id="board"></canvas>
+    <div id="topbar">
+      <span class="esc" id="toTitle">‹ ESC</span>
+      <span>DIAL <b id="tDial">—</b></span>
+      <span>ROUTE <b id="tRoute">—</b></span>
+      <span id="tState"></span>
+    </div>
+    <div id="banner"><span id="bannerText"></span><small id="bannerSub"></small></div>
+  </div>
+  <aside id="panel"></aside>
+</section>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

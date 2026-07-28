@@ -1,0 +1,514 @@
+// The machine's geometry.
+//
+// Laid out as a modern (digital) pachinko board, because modern pachinko has the
+// structure worth simulating: a big centre housing for the display, a nail field
+// you must thread, and a start pocket that does not pay you — it buys you a
+// lottery ticket. See docs/PLAN-THE-HONEST-MACHINE.
+//
+// Everything is in metres. Coordinates are y-down, origin at the top-left of the
+// playfield, matching the canvas so the renderer only ever applies a scale.
+//
+// ── THE THRESHOLD ────────────────────────────────────────────────────────────
+// The single most important thing in this file is emergent, not authored.
+//
+// The launch channel is a circular arc. The inner wall stops at 250°, a little
+// before the crest. A ball arriving there is still supported from outside by the
+// outer wall only if it is going fast enough to need it:  v² / R ≥ g·|sin θ|.
+// At 250° that works out to about 1.38 m/s. Below it, the ball falls inward and
+// rains down the middle of the board. Above it, the ball stays pinned to the
+// outer wall, carries all the way round, and comes down the far right.
+//
+// Two routes, one knob, and a hard boundary between them — which is precisely
+// what Japanese players call *hidari-uchi* and *migi-uchi*, left-hitting and
+// right-hitting. Nobody designed that binary into this file. It falls out of
+// v²/R ≥ g sin θ.
+//
+// And the dial position that sits exactly on the boundary is the one whose
+// outcome is least predictable. Maximum uncertainty lives at a specific,
+// findable place on the knob. The physics and the dopamine literature turn out
+// to be pointing at the same number. See docs/SCIENCE.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { World, makeBall, MAT, BALL_R } from './world.js'
+import { closestOnSegment } from './vec.js'
+
+// Regulated dimensions, from NPSC Rule No. 4 of 1985, appendix 4. The playfield
+// must fit inside a 500 mm square and must contain a 300 mm circle; 440 × 490 mm
+// with a 412 mm rail circle satisfies both. Pocket mouths are capped by law and
+// those caps are tight against an 11 mm ball — a closed prize pocket may be no
+// more than 13 mm across, which is two millimetres of margin.
+export const BOARD = {
+  w: 0.440,
+  h: 0.490,
+  rail: { cx: 0.220, cy: 0.246, r: 0.206, gap: 0.0200 },
+  railStart: 130,      // deg — where the ball enters the channel, bottom-left
+  railInnerEnd: 250,   // deg — the threshold. See the header note.
+  railOuterEnd: 352,   // deg — the outer channel wall runs on round to here
+  returnRubber: 337,   // deg — the kaeshi-gomu. See buildRail().
+  bowlGap: [78, 102],  // deg — the out hole
+
+  // Regulated mouth widths (metres).
+  mouthClosed: 0.013,  // prize pocket / gate, maximum
+  mouthTulip: 0.050,   // powered tulip when open, maximum 0.055
+  mouthAttacker: 0.070, // attacker when open, legal band 0.055–0.135
+
+  // The heso gap: the clear span between the two "life nails" above the start
+  // pocket. Real boards run 11.25–12.50 mm against an 11.00 mm ball, adjusted in
+  // 0.25 mm steps with plate gauges. Half a millimetre here is the difference
+  // between a parlour making money and losing it. This is the single most
+  // sensitive number in the entire simulation, and it is *supposed* to be.
+  hesoGap: 0.0125
+}
+
+const D2R = Math.PI / 180
+const R = BOARD.rail
+/** Nail shank radius. Real kugi are 1.7–2.0 mm across; brass, 150–230 HV. */
+export const NAIL_R = 0.0009
+/** Half-thickness of the segments walls are made of. */
+const SEG_R = 0.0022
+
+/**
+ * Where to put two segment *centrelines* so the CLEAR span between their
+ * surfaces is `clear`. Forgetting this is how the first build ended up with a
+ * nominally 13 mm mouth that was really 8.6 mm — impassable to an 11 mm ball,
+ * and a wedge that trapped a hundred balls a run. Regulated mouth widths are
+ * clear openings, so every pocket in this file goes through here.
+ */
+const clearHalf = (clear, segR = SEG_R) => clear / 2 + segR
+/** Furniture must stay inside this radius or it fouls the launch channel. */
+export const CLEAR_R = R.r - R.gap - BALL_R - 0.003   // ≈ 0.181 m
+
+const px = (deg, rad) => R.cx + Math.cos(deg * D2R) * rad
+const py = (deg, rad) => R.cy + Math.sin(deg * D2R) * rad
+
+export function buildBoard () {
+  const world = new World({ w: BOARD.w, h: BOARD.h })
+  const parts = { nails: [], tulips: [], rotors: [], sensors: {}, attacker: null, housing: null }
+
+  buildRail(world)
+  buildHousing(world, parts)
+  buildNailField(world, parts)
+  buildFurniture(world, parts)
+  buildPockets(world, parts)
+  parts.wedges = clearWedges(world, parts)
+
+  world.markDirty()
+  return { world, parts }
+}
+
+/**
+ * Remove nails that form a wedge — a gap wide enough for a ball to enter and too
+ * narrow for it to leave.
+ *
+ * This is the board's most persistent failure mode and it is not obvious by eye.
+ * A nail at the regular grid pitch can land 10.5 mm from a tulip wing or a
+ * housing wall, and 10.5 mm is a fraction under a ball diameter: every ball that
+ * finds it stops there for good. Three separate hand-fixes chased three
+ * instances of this before it became clear it wanted a rule instead.
+ *
+ * The rule: the clear span between a nail and any wall must be either wide
+ * enough to pass a ball with margin, or nothing at all. Nothing in between.
+ * The deliberate exception is the pair of life nails, whose entire purpose is to
+ * be a gap measured in tenths of a millimetre — they are checked against each
+ * other, never culled.
+ */
+function clearWedges (world, parts, verbose = false) {
+  const BALL_D = BALL_R * 2
+  const MIN_CLEAR = BALL_D + 0.0018        // must pass a ball with margin
+  const removed = []
+  const keep = []
+  const protectedNails = new Set(parts.lifeNails)
+
+  for (const n of world.nails) {
+    if (protectedNails.has(n)) { keep.push(n); continue }
+    let worst = Infinity
+    for (const s of world.segments) {
+      const c = closestOnSegment(n, { x: s.ax, y: s.ay }, { x: s.bx, y: s.by })
+      const gap = Math.hypot(n.x - c.x, n.y - c.y) - n.r - s.r
+      if (gap < worst) worst = gap
+    }
+    for (const ro of parts.rotors) {
+      const gap = Math.hypot(n.x - ro.x, n.y - ro.y) - n.r - ro.r - 0.0022
+      if (gap < worst) worst = gap
+    }
+    if (worst > 0 && worst < MIN_CLEAR) { removed.push({ nail: n, gap: worst }); continue }
+    keep.push(n)
+  }
+
+  if (removed.length !== 0) {
+    world.nails = keep
+    parts.nails = parts.nails.filter(n => keep.includes(n))
+    world.markDirty()
+  }
+  if (verbose && removed.length) {
+    for (const r of removed) {
+      console.log(`  wedge culled at (${r.nail.x.toFixed(3)}, ${r.nail.y.toFixed(3)}) gap ${(r.gap * 1000).toFixed(1)} mm`)
+    }
+  }
+  return removed
+}
+
+// --- the launch rail and the bowl ----------------------------------------
+
+function arc (world, radius, from, to, mat, tag, thick = 0.0018) {
+  // 1.5° chords on a 206 mm radius give a 5.4 mm facet — under one ball radius,
+  // so the ball rolls along the rail instead of clattering down a staircase.
+  const step = 1.5
+  let ax = px(from, radius), ay = py(from, radius)
+  for (let a = from + step; a <= to + 1e-9; a += step) {
+    const x = px(a, radius), y = py(a, radius)
+    world.addSegment(ax, ay, x, y, thick, mat, tag)
+    ax = x; ay = y
+  }
+}
+
+function buildRail (world) {
+  const { r, gap } = R
+  arc(world, r, BOARD.railStart - 8, BOARD.railOuterEnd, MAT.rail, 'rail-outer')
+  arc(world, r - gap, BOARD.railStart, BOARD.railInnerEnd, MAT.rail, 'rail-inner')
+
+  // The return rubber (返しゴム, kaeshi-gomu).
+  //
+  // Without this the machine is broken, and the reason is a nice piece of physics.
+  // A ball fast enough to stay pinned to the outer wall at the threshold stays
+  // pinned *forever*: past the crest the wall curves away, but the centripetal
+  // requirement v²/R ≥ g·sinθ only gets easier as θ increases, so a smooth circle
+  // never releases what it has caught. The first build of this board sent every
+  // strong shot sailing round the outside and straight down the drain, touching
+  // not one nail.
+  //
+  // Real machines have exactly this problem and solve it with exactly this part:
+  // a rubber block jutting inward at the top right that knocks the ball off the
+  // wall and into the field. It is the reason *migi-uchi* puts balls on the right
+  // of the board rather than in the gutter.
+  // Built as a closed triangle welded to the wall, not a single fin. A bare fin
+  // leaves an acute pocket on its downstream side, and an acute pocket against a
+  // curved wall passes through one ball diameter somewhere — the same trap as the
+  // tulips, in miniature.
+  const ra = BOARD.returnRubber
+  const tipA = ra + 7, tipR = r - 0.030
+  world.addSegment(px(ra, r), py(ra, r), px(tipA, tipR), py(tipA, tipR), 0.0022, MAT.rubber, 'return-rubber')
+  world.addSegment(px(tipA, tipR), py(tipA, tipR), px(ra + 15, r), py(ra + 15, r), 0.0022, MAT.rubber, 'return-rubber')
+
+  // The foul stop: a short radial wall just below the launch point. A shot too
+  // weak to reach the threshold rolls back down and is caught here rather than
+  // spilling into the field. Real machines refund these.
+  const fa = BOARD.railStart - 5
+  world.addSegment(px(fa, r), py(fa, r), px(fa, r - gap), py(fa, r - gap), 0.0018, MAT.wall, 'foul-stop')
+
+  // The bowl: containment below the channel, open at the bottom for the out hole.
+  arc(world, r, BOARD.railOuterEnd, 360 + BOARD.bowlGap[0], MAT.wall, 'bowl')
+  arc(world, r, BOARD.bowlGap[1], BOARD.railStart - 8, MAT.wall, 'bowl')
+}
+
+/**
+ * Where a ball enters the channel, and the unit tangent it is fired along.
+ *
+ * The ball starts in contact with the OUTER wall, not floating at mid-channel.
+ * Launching it mid-gap made it fall 2.7 mm onto the rail and bounce, and since
+ * the rail is lossy the surviving energy depended on the phase of that bounce —
+ * which made the foul rate chaotic rather than monotonic in dial position: 11%
+ * at 0.25, 35% at 0.30, 82% at 0.35, 21% at 0.40, over a total speed spread of
+ * six per cent. Gravity presses the ball outward here anyway, so contact at t=0
+ * is also the physically honest starting condition.
+ */
+export function launchPoint () {
+  const a = BOARD.railStart * D2R
+  const rad = R.r - 0.0018 - BALL_R
+  return {
+    x: R.cx + Math.cos(a) * rad,
+    y: R.cy + Math.sin(a) * rad,
+    dx: -Math.sin(a),
+    dy: Math.cos(a)
+  }
+}
+
+/**
+ * The speed at which a ball just barely stays pinned to the outer wall at the
+ * point the inner wall ends — i.e. the boundary between the two routes.
+ * Exported because the HUD marks it on the dial, and because tools/calibrate.js
+ * checks that the measured boundary matches this closed form.
+ */
+export function thresholdCrestSpeed () {
+  const inward = -Math.sin(BOARD.railInnerEnd * D2R)   // radial component of g, outward-positive
+  return Math.sqrt(Math.max(0, inward) * 9.80665 * R.r)
+}
+
+// --- the centre housing ---------------------------------------------------
+
+function buildHousing (world, parts) {
+  // The housing is gabled, not flat-topped. A flat roof is a shelf, and a shelf
+  // in a pachinko machine is a ball trap — the first build parked forty-eight
+  // balls up here per run. Real centre housings are domed or peaked for exactly
+  // this reason: every upward-facing surface on a real board sheds.
+  // The housing sits well below the rail exit. In the first layout its roof was
+  // directly under the release point, so a weak shot landed on it and rolled
+  // straight into a warp — eighty per cent of balls at low dial. A board needs
+  // scattering distance between the rail and its first big obstacle.
+  const x0 = 0.126, x1 = 0.314, y0 = 0.166, y1 = 0.292, rr = 0.020
+  const seg = (ax, ay, bx, by) => world.addSegment(ax, ay, bx, by, SEG_R, MAT.wall, 'housing')
+
+  // A domed roof rather than a gable. A gable has an apex, an apex is a balance
+  // point, and a deterministic simulation will park a ball on a balance point
+  // forever. The exponent on t skews the crown off-centre so there is no exact
+  // equilibrium at the midline either.
+  const rise = 0.038
+  const dome = (x) => {
+    const t = Math.min(1, Math.max(0, (x - x0) / (x1 - x0)))
+    return y0 - rise * Math.sin(Math.PI * Math.pow(t, 1.14))
+  }
+  // The warp mouths are deliberately meaner than the 13 mm legal ceiling. At the
+  // full 13 mm they swallowed 29% of every ball put on the board, which made the
+  // stage route — and therefore the start pocket — about three times as generous
+  // as a real machine's base rate. 11.7 mm leaves 0.7 mm of clearance per side.
+  const warpLx = 0.163, warpRx = 0.277
+  const hw = clearHalf(0.0117)
+  const roofSpan = (from, to) => {
+    const N = 14
+    for (let i = 0; i < N; i++) {
+      const a = from + (to - from) * (i / N)
+      const b = from + (to - from) * ((i + 1) / N)
+      seg(a, dome(a), b, dome(b))
+    }
+  }
+  roofSpan(x0, warpLx - hw)
+  roofSpan(warpLx + hw, warpRx - hw)
+  roofSpan(warpRx + hw, x1)
+  const roofY = dome, roofYR = dome
+
+  // Sides and rounded bottom corners.
+  seg(x0, y0, x0, y1 - rr)
+  seg(x1, y0, x1, y1 - rr)
+  seg(x0 + rr, y1, x1 - rr, y1)
+  for (let i = 0; i < 6; i++) {
+    const a0 = Math.PI / 2 * (i / 6), a1 = Math.PI / 2 * ((i + 1) / 6)
+    seg(x0 + rr - Math.cos(a0) * rr, y1 - rr + Math.sin(a0) * rr,
+      x0 + rr - Math.cos(a1) * rr, y1 - rr + Math.sin(a1) * rr)
+    seg(x1 - rr + Math.cos(a0) * rr, y1 - rr + Math.sin(a0) * rr,
+      x1 - rr + Math.cos(a1) * rr, y1 - rr + Math.sin(a1) * rr)
+  }
+  parts.housing = { x0, y0, x1, y1, rr, dome, rise }
+
+  // Warp gates (ワープ) on the housing shoulders. A ball swallowed here is
+  // delivered to the stage (ステージ), a shelf under the display that dribbles it
+  // out right above the heso — enormously improving its odds. A designed shortcut
+  // that feels like luck; the board's clearest piece of manufactured near-agency,
+  // so it stays. machine.js re-spawns the ball on the stage.
+  parts.sensors.warpL = world.addSensor('warp', warpLx, roofY(warpLx) + 0.004, BOARD.mouthClosed, 0.012, 'warpL')
+  parts.sensors.warpR = world.addSensor('warp', warpRx, roofYR(warpRx) + 0.004, BOARD.mouthClosed, 0.012, 'warpR')
+  // Where the stage spits a warped ball back out.
+  parts.stage = { x: 0.220, y: 0.292, halfWidth: 0.030 }
+}
+
+function roundedRectPoints (x0, y0, x1, y1, r, seg) {
+  const out = []
+  const corner = (cx, cy, a0, a1) => {
+    for (let i = 0; i <= seg; i++) {
+      const a = a0 + (a1 - a0) * (i / seg)
+      out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r })
+    }
+  }
+  corner(x1 - r, y0 + r, -Math.PI / 2, 0)
+  corner(x1 - r, y1 - r, 0, Math.PI / 2)
+  corner(x0 + r, y1 - r, Math.PI / 2, Math.PI)
+  corner(x0 + r, y0 + r, Math.PI, Math.PI * 1.5)
+  out.push(out[0])
+  return out
+}
+
+// --- the nail field -------------------------------------------------------
+
+function buildNailField (world, parts) {
+  const { housing } = parts
+  // Real boards carry around 200 nails (documented range roughly 150–600). The
+  // first pass here left 86 after the wedge cull, which both looked bare and
+  // gave balls too clean a run at the pockets.
+  const pitchX = 0.0206
+  const pitchY = 0.0188
+
+  const usable = (x, y) => {
+    if (Math.hypot(x - R.cx, y - R.cy) > CLEAR_R) return false
+    // Clear of the housing, following the dome rather than its bounding box, so
+    // the scatter field can sit close above the shoulders where it matters.
+    if (x > housing.x0 - 0.013 && x < housing.x1 + 0.013 &&
+        y > housing.dome(x) - 0.013 && y < housing.y1 + 0.013) return false
+    if (y > 0.400) return false                       // leave the drain approach open
+    return true
+  }
+
+  for (let row = 0; row < 24; row++) {
+    const y = 0.066 + row * pitchY
+    const off = (row % 2) ? pitchX / 2 : 0
+    for (let col = 0; col < 24; col++) {
+      const x = 0.026 + col * pitchX + off
+      if (!usable(x, y)) continue
+      // A lane down the middle beneath the housing, so balls can actually reach
+      // the start pocket. In a parlour this corridor is what the nail technician
+      // giveth and taketh away.
+      if (Math.abs(x - 0.220) < 0.015 && y > housing.y1) continue
+      // Keep the tulip mouths clear. (The wedge sweep also protects them, but
+      // carving the hole up front keeps the approach lanes open.)
+      if (Math.hypot(x - px(135, 0.140), y - py(135, 0.140)) < 0.028) continue
+      if (Math.hypot(x - px(45, 0.140), y - py(45, 0.140)) < 0.028) continue
+      parts.nails.push(world.addNail(x, y))
+    }
+  }
+
+  // The inochi-kugi ("life nails"): the funnel directly above the start pocket.
+  // The most consequential nails on any pachinko board. BOARD.hesoGap is the
+  // clear span between their surfaces, so the centres sit half a gap plus one
+  // nail radius apart. At the default 11.8 mm against an 11.0 mm ball that is
+  // four tenths of a millimetre of clearance per side.
+  //
+  // Bending these is how parlours used to tune payout, and it is illegal — an
+  // unauthorised modification under Article 9 of the Entertainment Business Act,
+  // in the severity band that can suspend a licence. It was tolerated for decades
+  // under the fiction that nails bend naturally through play; the National Police
+  // Agency ended that tolerance in the 2015–16 crackdown and operators have been
+  // referred for prosecution since. Worth knowing before a future builder
+  // implements nail bending as a player verb.
+  const lnx = BOARD.hesoGap / 2 + NAIL_R
+  parts.lifeNails = [
+    world.addNail(0.220 - lnx, 0.316, NAIL_R),
+    world.addNail(0.220 + lnx, 0.316, NAIL_R)
+  ]
+  parts.nails.push(world.addNail(0.220 - 0.042, 0.302))
+  parts.nails.push(world.addNail(0.220 + 0.042, 0.302))
+
+  // The right-hand route: a sparse ladder of nails that catches balls coming
+  // down the outer wall on the migi-uchi line and walks them into the attacker.
+  for (let i = 0; i < 4; i++) {
+    const a = 22 + i * 11
+    parts.nails.push(world.addNail(px(a, 0.176 - i * 0.004), py(a, 0.176 - i * 0.004)))
+  }
+}
+
+// --- windmills, tulips ----------------------------------------------------
+
+function buildFurniture (world, parts) {
+  // Windmills (風車, kazaguruma). Brass axle, same hardness spec as the nails.
+  parts.rotors.push(world.addRotor(0.082, 0.238, 0.0225, 4, 0))
+  parts.rotors.push(world.addRotor(0.358, 0.238, 0.0225, 4, 0))
+
+  // Powered tulips (電動チューリップ, denchū). Closed, the mouth obeys the 13 mm
+  // prize-pocket cap; open, it may reach 55 mm and no more, for at most six
+  // seconds per activation.
+  // Sited at radius 0.140 from the rail centre, not 0.160. Any structure out
+  // near the rail creates a gap that *converges* — wide at the top, pinched at
+  // the bottom — and somewhere along it the clear span passes through exactly
+  // one ball diameter. That is an infallible trap, and it caught a third of
+  // every ball on the board. The nail sweep cannot help here: you cannot cull a
+  // wall. Keep large furniture well inboard, and run tools/board-audit.js.
+  parts.tulips.push(makeTulip(world, 'tulipL', px(135, 0.140), py(135, 0.140)))
+  parts.tulips.push(makeTulip(world, 'tulipR', px(45, 0.140), py(45, 0.140)))
+}
+
+function makeTulip (world, id, x, y) {
+  // Closed, the clear mouth is a hair over one ball wide, so a closed tulip
+  // takes balls only rarely. Open, it reaches the regulated 50 mm.
+  const halfMouth = clearHalf(0.0113, 0.0018)
+  const wingLen = 0.024
+  const tulip = { id, x, y, open: false, t: 0, halfMouth, wingLen }
+  tulip.maxSpread = Math.asin(Math.min(1, (BOARD.mouthTulip / 2 - halfMouth) / wingLen))
+  tulip.segL = world.addSegment(x - halfMouth, y, x - halfMouth, y - wingLen, 0.0018, MAT.wall, id + '-L')
+  tulip.segR = world.addSegment(x + halfMouth, y, x + halfMouth, y - wingLen, 0.0018, MAT.wall, id + '-R')
+  tulip.segL.dynamic = tulip.segR.dynamic = true      // wings move; keep out of the static grid
+  // The cup below the mouth. Without it the sensor is a bare rectangle in open
+  // space and balls stroll in from the side — narrowing the mouth then does
+  // nothing at all, which is exactly what the first calibration run showed.
+  // A pocket has to be a pocket.
+  const d = 0.016
+  world.addSegment(x - halfMouth, y, x - halfMouth, y + d, 0.0018, MAT.wall, id + '-cupL')
+  world.addSegment(x + halfMouth, y, x + halfMouth, y + d, 0.0018, MAT.wall, id + '-cupR')
+  world.addSegment(x - halfMouth, y + d, x + halfMouth, y + d, 0.0018, MAT.wall, id + '-cupB')
+  tulip.sensor = world.addSensor('tulip', x, y + d * 0.6, halfMouth * 1.6, 0.010, id)
+  applyTulip(tulip, 1)
+  return tulip
+}
+
+/** Animate a tulip's wings toward its open/closed target. Called from machine.js. */
+export function applyTulip (tulip, dt) {
+  const target = tulip.open ? 1 : 0
+  tulip.t += (target - tulip.t) * Math.min(1, dt * 12)
+  const spread = tulip.maxSpread * tulip.t
+  const { x, y, halfMouth, wingLen } = tulip
+  const sl = Math.sin(spread), cl = Math.cos(spread)
+  tulip.segL.ax = x - halfMouth; tulip.segL.ay = y
+  tulip.segL.bx = x - halfMouth - sl * wingLen
+  tulip.segL.by = y - cl * wingLen
+  tulip.segR.ax = x + halfMouth; tulip.segR.ay = y
+  tulip.segR.bx = x + halfMouth + sl * wingLen
+  tulip.segR.by = y - cl * wingLen
+}
+
+// --- pockets --------------------------------------------------------------
+
+function buildPockets (world, parts) {
+  // The start pocket — 始動口 (shidōguchi), universally called ヘソ, "the navel".
+  // Landing here does NOT pay meaningfully; it triggers the digital lottery. The
+  // gap between "the ball went in" and "you won" is the single most important
+  // fact about modern pachinko, and this game says it out loud.
+  // Same lesson as the tulips: the heso is a cup, not a floating rectangle. The
+  // only way in is down through the life nails.
+  const hx = 0.220, hy = 0.322, hhw = clearHalf(BOARD.mouthClosed, 0.0018), hd = 0.016
+  world.addSegment(hx - hhw, hy, hx - hhw, hy + hd, 0.0018, MAT.wall, 'heso-L')
+  world.addSegment(hx + hhw, hy, hx + hhw, hy + hd, 0.0018, MAT.wall, 'heso-R')
+  world.addSegment(hx - hhw, hy + hd, hx + hhw, hy + hd, 0.0018, MAT.wall, 'heso-B')
+  parts.sensors.chucker = world.addSensor('chucker', hx, hy + hd * 0.6, hhw * 1.6, 0.010, 'start')
+  parts.heso = { x: hx, y: hy, hw: hhw, depth: hd }
+
+  // The attacker (大入賞口, ōnyūshōkuchi) on the right-hand route, shut except
+  // during a jackpot round. This is why migi-uchi exists — during ōatari you
+  // crank the dial past the threshold and feed the right-hand line. Legally it
+  // may open for up to 30 s per round, and no more than 1.8 s outside a jackpot.
+  //
+  // It is a hole in the bowl wall, and its flap is an arc of that same wall.
+  // Closed, the boundary is unbroken and balls roll straight over it; there is
+  // no ledge and no crevice. Earlier drafts hung the flap in front of the wall
+  // and left an eleven-millimetre slot behind it — which is, to the nearest
+  // tenth of a millimetre, the width of a pachinko ball. It caught 391 per run.
+  // Sited at 318°, upstream of the return rubber, because that is where a
+  // migi-uchi ball actually is: still pinned to the outer wall on its way round.
+  // Placed downstream (the first attempt put it at 30°) the rubber has already
+  // flung the ball inward across the field and the attacker starves — thirteen
+  // jackpots returned barely a third of the balls they should have.
+  const AT = 318
+  const halfAngle = (BOARD.mouthAttacker / 2) / R.r / D2R
+  const a0 = AT - halfAngle, a1 = AT + halfAngle
+  const flap = []
+  for (let a = a0; a < a1 - 1e-9; a += (a1 - a0) / 8) {
+    const b = Math.min(a1, a + (a1 - a0) / 8)
+    flap.push(world.addSegment(px(a, R.r), py(a, R.r), px(b, R.r), py(b, R.r),
+      0.0018, MAT.wall, 'attacker-flap'))
+  }
+  // The catch basin sits just outside the wall; a ball only reaches it when the
+  // flap is down.
+  const ax = px(AT, R.r + 0.014), ay = py(AT, R.r + 0.014)
+  parts.sensors.attacker = world.addSensor('attacker', ax, ay, 0.046, 0.046, 'attacker')
+  parts.sensors.attacker.open = false
+  parts.attacker = {
+    x: px(AT, R.r), y: py(AT, R.r), a0, a1, angle: AT,
+    flap, sensor: parts.sensors.attacker, open: false, t: 0
+  }
+
+  // Out holes: everything that failed. Most balls end here — that is the game.
+  const og = BOARD.bowlGap
+  parts.sensors.out = world.addSensor('out', px(90, R.r), py(90, R.r) + 0.004,
+    Math.abs(px(og[1], R.r) - px(og[0], R.r)) + 0.02, 0.022, 'out')
+
+  // The foul catch, sitting in the channel just above the foul stop.
+  const fa = BOARD.railStart - 2
+  parts.sensors.foul = world.addSensor('foul', px(fa, R.r - R.gap / 2), py(fa, R.r - R.gap / 2),
+    0.014, 0.014, 'foul')
+}
+
+/** Open/close the attacker gate. */
+export function applyAttacker (att, dt) {
+  const target = att.open ? 1 : 0
+  att.t += (target - att.t) * Math.min(1, dt * 14)
+  const down = att.t > 0.55
+  for (const s of att.flap) s.disabled = down
+  att.sensor.open = down
+}
+
+export { makeBall, BALL_R }
