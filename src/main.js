@@ -46,16 +46,22 @@ function load () {
   // A save written before the roguelike has no meta record. Merge rather than
   // replace so a returning player keeps their tokens and their ledger.
   state.meta = Object.assign(newMeta(), state.meta || {})
+  // Varnish is SESSION state now (operator's ruling: colour on by default).
+  // It used to persist, which meant one V-press in a testing session shipped
+  // a permanently greyscale game to that browser — the save faithfully
+  // remembering a museum mode nobody chose twice. V and the OPTIONS slider
+  // still work; they just last until the tab closes.
+  state.varnish = 1
 }
 function save () {
   // Whitelist, for the same reason: settings persist, session state does not.
   // `meta` is on the list and a RUN is not — a run in progress is session
   // state, and a roguelike that silently restores one is a roguelike whose
   // death is optional.
-  const { spec, rate, varnish, vol, muted, tokens, lifetime, meta } = state
+  const { spec, rate, vol, muted, tokens, lifetime, meta } = state
   try {
     localStorage.setItem(SAVE_KEY,
-      JSON.stringify({ spec, rate, varnish, vol, muted, tokens, lifetime, meta }))
+      JSON.stringify({ spec, rate, vol, muted, tokens, lifetime, meta }))
   } catch { /* private mode */ }
 }
 load()
@@ -430,6 +436,7 @@ function syncBackroom () {
   const skip = $('#brSkip')
   skip.childNodes[0].textContent = 'TAKE NOTHING'
   skip.querySelector('small').textContent = 'forfeits this floor’s remaining picks'
+  $('#brTanuki').src = './images/tanuki-fuku.png'
   $('#brHead').textContent = run.floor > FLOORS
     ? `OVERTIME ${run.floor - FLOORS} CLEARED`
     : `FLOOR ${run.floor} CLEARED`
@@ -479,6 +486,10 @@ const nextQuota = () =>
 function syncShop () {
   const r = run
   $('#brHead').textContent = 'THE SHOP'
+  // The shop gets its own dealer: the ball tanuki (operator art — the belly
+  // IS the merchandise). Part of the two-tenant signage contract: the 福
+  // poster is the draft's, this one is the shop's, syncBackroom restores.
+  $('#brTanuki').src = './images/tanuki-balls.png'
   $('#brSub').textContent =
     `${fmt(r.score)} score in hand · ${fmt(r.spent)} spent so far. ` +
     `A part is ${fmt(r.partPrice)}; each one fitted raises the next's price by the wall's own ` +

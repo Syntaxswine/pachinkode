@@ -817,6 +817,22 @@ let die) and a note that states, per-run, the measured headline fact the backlog
 retired; the screen now says "Steel, brass, and a little luck. The parlour is open." A player
 arrives at a parlour, not a lecture.
 
+**Colour is the default now (operator's ruling).** Varnish no longer persists — it is SESSION
+state, booting at 1 every load. The trap it fixes: one V-press in a testing session used to
+ship a permanently greyscale game to that browser, the save faithfully remembering a museum
+mode nobody chose twice. V and the OPTIONS slider still work for the session.
+
+**The jackpot ANIMATION (operator-supplied video).** `images/tanuki-jackpot.mp4` (was the
+unexamined uuid mp4) plays on the LCD during a jackpot: a muted, looping `<video>` whose
+current frame the renderer paints onto the canvas each draw — one surface, no overlay. Muted
+is what makes `play()` legal without a gesture; the video sits rewound between parties so
+every jackpot starts at frame one; the standing PNG is the fallback while it buffers (and
+forever, headless). Varnish-gated like the still was: the count is information, the character
+is the con. And the last unplaced operator image — the ball tanuki, belly like the
+merchandise — is keyed (`images/tanuki-balls.png`) and installed as THE SHOP's dealer: the
+two-tenant signage contract now swaps the poster too (`syncShop` hangs the ball tanuki,
+`syncBackroom` restores the 福 poster).
+
 **The wall-side gold split (operator's find, fixed same day).** The twin's blind sideways
 offset could birth it PAST a wall's centerline at rail-side nails, where the contact solver
 resolves it to the far face — a ball living in dead space, occasionally knocked back into play.

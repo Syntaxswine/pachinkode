@@ -63,6 +63,17 @@ export class Renderer {
     // constructs in a DOM-less harness.
     this.tanuki = typeof Image !== 'undefined' ? new Image() : null
     if (this.tanuki) this.tanuki.src = './images/tanuki-standing.png'
+    // The jackpot ANIMATION (operator-supplied video): a muted, looping
+    // <video> whose current frame is painted onto the LCD each draw — canvas
+    // can drawImage a video element directly, so the LCD stays one surface.
+    // Muted is what makes play() legal without a gesture. The standing PNG
+    // above is the fallback while it buffers (or forever, headless).
+    this.tanukiVid = typeof document !== 'undefined' ? document.createElement('video') : null
+    if (this.tanukiVid) {
+      const v = this.tanukiVid
+      v.src = './images/tanuki-jackpot.mp4'
+      v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto'
+    }
   }
 
   resize (cssW, cssH) {
@@ -440,14 +451,29 @@ export class Renderer {
     // as a licensed machine would. A slow bob, no strobe. Pure lacquer: at
     // varnish 0 the screen keeps the numbers and loses the mascot, which is
     // the honest split — the count is information, the character is the con.
-    if (m.inJackpot && P.varnish > 0.01 && this.tanuki &&
-        this.tanuki.complete && this.tanuki.naturalWidth) {
-      const tw = h * 0.46
+    if (m.inJackpot && P.varnish > 0.01) {
+      // The video plays only while the party is on; otherwise it sits
+      // rewound, so every jackpot's animation starts from its first frame.
+      const v = this.tanukiVid
+      if (v && v.paused) v.play().catch(() => {})
       const bob = Math.sin(this._t * 5.5) * h * 0.018
-      ctx.save()
-      ctx.globalAlpha = 0.92 * P.varnish
-      ctx.drawImage(this.tanuki, x1 - tw - w * 0.02, y0 + h * 0.34 + bob, tw, tw)
-      ctx.restore()
+      if (v && v.readyState >= 2 && v.videoWidth) {
+        const th = h * 0.52
+        const tw = th * v.videoWidth / v.videoHeight
+        ctx.save()
+        ctx.globalAlpha = 0.92 * P.varnish
+        ctx.drawImage(v, x1 - tw - w * 0.02, y0 + h * 0.30 + bob, tw, th)
+        ctx.restore()
+      } else if (this.tanuki && this.tanuki.complete && this.tanuki.naturalWidth) {
+        const tw = h * 0.46
+        ctx.save()
+        ctx.globalAlpha = 0.92 * P.varnish
+        ctx.drawImage(this.tanuki, x1 - tw - w * 0.02, y0 + h * 0.34 + bob, tw, tw)
+        ctx.restore()
+      }
+    } else if (this.tanukiVid && !this.tanukiVid.paused) {
+      this.tanukiVid.pause()
+      this.tanukiVid.currentTime = 0
     }
 
     // 保留 — the pending queue.
