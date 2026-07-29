@@ -778,6 +778,55 @@ task; `npm run canary` nightly is the intent), and the probe it still wants is
 main.js into something headless before it can be honest (measuring a re-implementation of the
 wiring would be modelling twice, the sin everything else here avoids).
 
+## The wave, the panel, and the front door · 2026-07-29
+
+The operator's ruling reframed the whole project first: **pachinkode is fun-first.** Vugg's
+science-is-the-fun rigor does not transfer — the RTP bands are theming now, not law, drift from
+real pachinko is a design space, and the engagement thesis became a SILENT metric. The game
+should be an escape: "life is very stressful and we don't always have easy wins." Three builds
+followed from that in one sitting.
+
+**THE WAVE (operator's design).** Win probability rides the machine's own clock —
+`WAVE` in machine.js: a 60 s cycle, quadratic rise to a crest at phase 0.85, quick linear fall.
+Normalised so the cycle-mean multiplier is exactly 1: the wave redistributes luck in time, it
+mints none (test-pinned). It touches ONLY the digital lottery — the physics never lies — and it
+is SHOWN: the LCD's printed odds breathe (`oddsNow`, with a tide arrow), the frame lamps lift
+and quicken with the phase, the FIELD NOTES lottery row prints live and book odds side by side.
+The operator's tradeoff is the design's heart: surfing the crest pays BALLS (jackpots), feeding
+the trough keeps the CHAIN — the multiplier that is most of the score. The win draw is capped
+at p = 0.5 (no crest is a certainty) and consumes the same single rng call as ever.
+
+**THE WELCOME WAVE.** The first cycle is short and hot — "like putting the higher probability
+machines by the front door of the casino." 22 s period, LINEAR rise (√ of the standard shape —
+the front-door minute holds only ~5 tickets, so a wide hot zone beats a tall peak), boost 24,
+unnormalised (a gift, never below book odds), and the small win rides the tide too. Measured,
+40 fresh machines at dial 0.20: **78% catch a win inside 30 s, median 13 s**, mostly koatari —
+the low-scoring jackpot the operator asked for, low-scoring by construction because a new
+player's chain is cold. The ladder (48% → 62% → 78%) is in the WAVE constant's comment.
+
+**THE PANEL, cut to four tenants.** The panel proper now carries only what the player plays
+with: their balls, the score to hit, their score, and THE CHAIN — everything else (ledger,
+launcher diagnostics, lottery counters, THE MODEL OF YOU, the celebration audit, varnish) is
+behind a FIELD NOTES button, closed by default. L5 is not repealed; the exhibit became a
+drawer. The MODEL OF YOU was, in the operator's words, "kind of an abreaction" — but its
+useful residue is the new chain section: a decay-window bar (the clock the wave tempts you to
+let die) and a note that states, per-run, the measured headline fact the backlog carried —
+"the multiplier is N% of everything you have scored" — the moment it crosses 40%.
+
+**THE FRONT DOOR.** The title tagline (dopamine engine, a lottery you do not control) is
+retired; the screen now says "Steel, brass, and a little luck. The parlour is open." A player
+arrives at a parlour, not a lecture.
+
+**The wavecheck, honestly reported.** `run-sim --wavecheck` races three firing brains on the
+same seeds (steady metronome / crest surfer / trough dripper). At n=6 the ROBUST signal is
+jackpots-per-1k-launched: steady 0.1, surf 1.2, drip 1.3 — timing the crest really is worth
+~12× on the ball currency. The score/chain side did NOT separate (chain share 77–87% across
+all three; a chain rebuilds in seconds at ARCADE, so resting costs less than designed) — at
+this n those differences are inside the noise. If the operator wants the chain half of the
+tradeoff to bite harder, the lever is chain RAMP time, not the wave. Traps for the next
+builder: `FIRE_POLICY` in run-sim is a `let` (wavecheck swaps it); all policies harvest during
+parties unconditionally; and the welcome constants' comment carries its own re-measure warning.
+
 ## Left undone
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
   floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one
@@ -792,7 +841,10 @@ wiring would be modelling twice, the sin everything else here avoids).
   and it is exactly the sort of thing the unbuilt conditioning ledger exists to settle.
 - **The auto-player does not aim.** Every difficulty number here is therefore a FLOOR on what a
   human can do, which is the right direction to be wrong in but makes the curve conservative.
-- **The chain dominates the score and nothing says so.** The provenance pilot (see the keystone
+- ~~The chain dominates the score and nothing says so.~~ **Done 2026-07-29:** the panel's
+  chain section now prints "the multiplier is N% of everything you have scored" live, per run,
+  once the share crosses 40%. The provenance ledger got its first consumer. (Original item, for
+  the record:) The provenance pilot (see the keystone
   below) measured 50–79% of all points coming from the chain multiplier rather than from any
   pocket. That is the biggest single fact about how this game scores and it is invisible to the
   player, who sees a `×20.8` in the corner and no indication that it is most of their total.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>PACHINKODE</title>
-<meta name="description" content="A pachinko simulator with real physics and a switch on its own dopamine engine.">
+<meta name="description" content="A pachinko parlour in the browser — real steel physics, floors to climb, luck to ride.">
 <meta name="color-scheme" content="dark">
 <style>
   :root {
@@ -93,6 +93,11 @@
            padding: 14px 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 13px; }
   .sect { border-top: 1px solid var(--faint); padding-top: 10px; }
   .sect:first-child { border-top: none; padding-top: 0; }
+  .hudmore { background: none; border: 1px solid var(--faint); color: var(--dim);
+             font: inherit; font-size: 10px; letter-spacing: .14em; padding: 7px 0;
+             width: 100%; cursor: pointer; }
+  .hudmore:hover { color: var(--ink); border-color: var(--dim); }
+  #hudMore { display: flex; flex-direction: column; gap: 13px; }
   .k { color: var(--dim); font-size: 10px; letter-spacing: .14em; margin-bottom: 6px; }
   .big { font-size: 30px; letter-spacing: .04em; font-variant-numeric: tabular-nums; line-height: 1; }
   .stat { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0;
@@ -242,9 +247,13 @@
   <div class="jp">パチンコード</div>
   <h1>PACHINKODE</h1>
   <div class="rule"></div>
+  <!-- The old thesis line ("...a switch on its own dopamine engine. A lottery
+       you do not control.") is retired by operator's ruling: engagement is a
+       silent metric now. The player should arrive at a parlour, not a lecture —
+       the exhibit still exists, one click down, in FIELD NOTES and ABOUT. -->
   <div class="sub">
-    A pachinko machine built to real dimensions, with a switch on its own dopamine engine.<br>
-    One knob. Eleven-millimetre steel. A lottery you do not control.
+    Steel, brass, and a little luck.<br>
+    The parlour is open.
   </div>
   <img id="titleTanuki" src="./images/tanuki-label.png" alt="" width="132" height="132">
   <div id="titleBest" class="titlebest"></div>

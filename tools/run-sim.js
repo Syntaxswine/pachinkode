@@ -30,7 +30,7 @@
 // difficulty measurement to be wrong in — if the machine is beatable by this,
 // it is beatable.
 
-import { Machine, FIRE_RATES } from '../src/sim/machine.js'
+import { Machine, FIRE_RATES, WAVE, waveW } from '../src/sim/machine.js'
 import { DT } from '../src/sim/world.js'
 import { Run, quotaFor, QUOTA_BASE, QUOTA_GROWTH, BALLS_BASE, FLOORS } from '../src/sim/run.js'
 import { CABINETS, CABINET_ORDER } from '../src/sim/cabinets.js'
@@ -100,6 +100,28 @@ const PUSH = {
 }
 const PUSH_POLICY = PUSH[arg('push', 'thrifty')] || PUSH.thrifty
 
+// ── the wave's firing policies ──────────────────────────────────────────────
+//
+// The wave (machine.js WAVE) split "when do I fire" into strategies, and the
+// operator's design predicts a tradeoff: crest-surfing chases jackpots
+// (BALLS), steady fire feeds the chain (SCORE, and most of it). These three
+// brains exist to measure whether the strategies actually separate:
+//
+//   steady — fires always: the metronome. The chain's best friend.
+//   surf   — fires only in the high tide (waveW > 0.55), rests the trough.
+//   drip   — the discovered hybrid: a one-third duty cycle through the trough,
+//            just enough scoring traffic to keep the chain window alive, then
+//            full fire at the crest. Deliberately un-taught in the game.
+//
+// All three harvest during a party regardless — not firing at an open
+// attacker is not a strategy, it is a bug in the player.
+const FIRE = {
+  steady: () => true,
+  surf: (m) => waveW(m.wavePhase) > 0.55,
+  drip: (m) => waveW(m.wavePhase) > 0.55 || Math.floor(m.time / 0.9) % 3 === 0
+}
+let FIRE_POLICY = FIRE[arg('fire', 'steady')] || FIRE.steady
+
 /**
  * Play one floor to its conclusion. Returns when the run leaves 'playing'.
  *
@@ -134,7 +156,8 @@ function playFloor (run, seed, siteTally) {
     // machine's spent/won ledger stays honest either way, because those move on
     // launches and payouts rather than on the balance.
     m.tokens = Math.max(0, run.ballsLeft)
-    m.firing = run.ballsLeft > 0 && m.launched < launchCap
+    m.firing = run.ballsLeft > 0 && m.launched < launchCap &&
+      (m.inJackpot || m.koatari || FIRE_POLICY(m))
     m.dial = (m.inJackpot || m.koatari) ? MIGI : BASE_DIAL
     m.step(DT)
     const evs = m.drain()
@@ -185,6 +208,7 @@ function playRun (cabKey, seed, siteTally) {
       score: run.floorScore,
       cleared: run.status === 'cleared',
       launched: stats.launched,
+      jackpots: stats.jackpots,
       launchedAtQuota: run.launchedAtQuota || stats.launched,
       bestChain: run.bestChain,
       parts: run.loadout.parts.length
@@ -275,6 +299,41 @@ if (flag('power')) {
   }
   console.log(`\n  QUOTA_GROWTH is ${QUOTA_GROWTH}. A floor is survivable only if the parts ` +
     `taken\n  between two floors are worth more than that.\n`)
+  process.exit(0)
+}
+
+if (flag('wavecheck')) {
+  // Race the three firing brains on the SAME seeds and see whether the wave's
+  // designed tradeoff is real: surf should buy jackpots-per-launch (balls),
+  // steady should buy chain share (score), drip should sit between — or
+  // beat both, which is what makes it worth leaving in as a discovery.
+  const N = num('n', 8)
+  const cab = arg('cab', 'floor')
+  console.log(`\n  the wave check — ${CABINETS[cab].label}, ${N} runs per policy, same seeds`)
+  console.log(`  WAVE period ${WAVE.period}s crest ${WAVE.crest} boost ${WAVE.boost}× · welcome ${WAVE.welcomePeriod}s at ${WAVE.welcomeBoost}×\n`)
+  console.log('  policy    floors   score(med)    chain-share   best chain   jackpots/1k balls')
+  console.log('  ' + '─'.repeat(78))
+  for (const name of ['steady', 'surf', 'drip']) {
+    FIRE_POLICY = FIRE[name]
+    const rows = []
+    for (let s = 0; s < N; s++) {
+      const { run, trace } = playRun(cab, s + 41)
+      const launched = trace.reduce((a, t) => a + t.launched, 0)
+      const P = run.provenance
+      rows.push({
+        floors: trace.length,
+        score: run.score,
+        share: P.fromChain / Math.max(1, P.base + P.fromChain),
+        chain: run.bestChain,
+        jpk: 1000 * trace.reduce((a, t) => a + (t.jackpots || 0), 0) / Math.max(1, launched)
+      })
+    }
+    const med = (k) => rows.map(r => r[k]).sort((a, b) => a - b)[Math.floor(rows.length / 2)]
+    const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length
+    console.log(`  ${name.padEnd(8)} ${mean('floors').toFixed(1).padStart(6)}   ${nf(med('score')).padStart(10)}   ` +
+      `${pct(mean('share')).padStart(11)}   ${med('chain').toFixed(0).padStart(10)}   ${mean('jpk').toFixed(1).padStart(8)}`)
+  }
+  console.log('\n  same seeds per policy — differences are the BRAIN, not the dice.\n')
   process.exit(0)
 }
 

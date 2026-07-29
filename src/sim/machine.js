@@ -68,6 +68,66 @@ export const SPECS = {
   }
 }
 
+/**
+ * THE WAVE — the lottery's tide (operator's design, 2026-07-29).
+ *
+ * Win probability oscillates on the machine's own clock: a long slow rise, a
+ * sharp crest, a quick fall — asymmetric on purpose, because the rise is where
+ * anticipation lives and a slow decay after the crest reads as the machine
+ * going stale. The ancestors: must-hit-by progressives (a rising hazard rate,
+ * hidden), the 波 folklore of Japanese parlours (believed even when false),
+ * and Skinner's fixed-interval scallop (play will quiet after a crest and
+ * build toward the next — that is the intended rhythm, not a side effect).
+ *
+ * The wave touches ONLY the digital lottery. The physics never lies: no nail,
+ * pocket, or route changes with the phase. And it is shown, not hidden — the
+ * printed odds breathe (oddsNow), the frame lamps ride the phase — because
+ * the whole mechanic is a timing skill, and a timing skill needs a clock the
+ * player can read.
+ *
+ * THE TRADEOFF (the operator's half of the design): surfing the crest pays in
+ * BALLS (jackpots), but resting through the trough kills the CHAIN, which is
+ * measured at 50–79% of all score. Two currencies, two playstyles, re-chosen
+ * every cycle. WAVE.period vs the chain's decay window is therefore a coupled
+ * pair of constants — tune with tools/run-sim.js --wavecheck, which races a
+ * surfer, a metronome, and a dripper on the same seeds.
+ */
+/**
+ * THE WELCOME WAVE (operator's ruling, same day): the FIRST cycle is short and
+ * hot — crest ≈ 19 s in, well inside the asked-for 15–30 s window, at a far
+ * bigger boost. "It's like putting the higher probability machines by the
+ * front door of the casino" — a new player should catch a low-scoring jackpot
+ * almost immediately (low-scoring by construction: their chain is cold, so
+ * the jackpot pays balls, not points). The welcome boost is UNNORMALISED — a
+ * pure gift, never dipping below book odds — and the win draw is capped at
+ * p = 0.5 so no crest, welcome or otherwise, ever makes the lottery a
+ * certainty. After the welcome, the tide settles into its steady cycle.
+ */
+// FINAL welcome measurement (40 fresh machines, drum-fire at dial 0.20, the
+// full shipped shape: boost 24 with the LINEAR welcome rise): 31/40 (78%)
+// catch a win inside 30 s, median 13 s, mostly small wins with the odd full
+// jackpot — the rest never landed a ball in the start pocket, which is
+// physics and stays honest. The ladder here: boost 12 quadratic = 48%,
+// boost 24 quadratic = 62%, boost 24 linear = 78%. The binding constraint is
+// SPIN COUNT (~5 tickets in 30 s), so widening the hot zone beat raising the
+// peak. Re-run the sweep in this file's history before trusting these lines
+// after any economy change.
+export const WAVE = { period: 60, crest: 0.85, boost: 4, welcomePeriod: 22, welcomeBoost: 24 }
+
+/** The wave's shape: 0..1 over phase 0..1. Quadratic rise to the crest (slow
+ *  start, accelerating), linear drop after it. Pure, so tests and tools can
+ *  hold it without a Machine. */
+export function waveW (phi) {
+  phi = ((phi % 1) + 1) % 1
+  if (phi < WAVE.crest) { const u = phi / WAVE.crest; return u * u }
+  return 1 - (phi - WAVE.crest) / (1 - WAVE.crest)
+}
+
+// Cycle-mean of waveW (∫u² = crest/3, fall triangle = (1−crest)/2), used to
+// normalise so the average win probability equals the spec's printed odds.
+export const WAVE_MEAN = WAVE.crest / 3 + (1 - WAVE.crest) / 2
+export const WAVE_NORM = 1 + (WAVE.boost - 1) * WAVE_MEAN
+
 /** Mean number of jackpots per chain, from the spec alone. Used by calibrate.js. */
 export function chainLength (S) {
   const catchP = 1 - Math.pow(1 - 1 / S.kakuhenOdds, S.stSpins)
@@ -247,6 +307,36 @@ export class Machine {
   drain () { const e = this.events; this.events = []; return e }
 
   get odds () { return this.kakuhen > 0 ? this.S.kakuhenOdds : this.S.jackpotOdds }
+
+  /** Where the machine is in its tide, 0..1. Crest at WAVE.crest. The first
+   *  cycle is the short welcome wave; every cycle after runs at full period. */
+  get wavePhase () {
+    if (this.time < WAVE.welcomePeriod) return this.time / WAVE.welcomePeriod
+    return ((this.time - WAVE.welcomePeriod) % WAVE.period) / WAVE.period
+  }
+
+  /** True during the machine's first, front-door cycle. */
+  get waveWelcome () { return this.time < WAVE.welcomePeriod }
+
+  /**
+   * The tide's multiplier on the win probability, normalised so the
+   * CYCLE-AVERAGE probability is exactly the spec's printed 1/odds — the wave
+   * redistributes luck in time, it does not mint any. A player firing
+   * uniformly across the cycle faces the book odds; a player who times the
+   * crest does better, and what they give up is the chain (see run.js: the
+   * chain decays on silence, so resting through the trough resets the
+   * multiplier that most of the score comes from). Operator's design.
+   */
+  get waveMult () {
+    // The welcome rises LINEARLY (√ of the standard quadratic shape): the tide
+    // comes in early, because the front-door minute only holds ~5 tickets and
+    // a late crest wastes most of them on cold odds.
+    if (this.waveWelcome) return 1 + (WAVE.welcomeBoost - 1) * Math.sqrt(waveW(this.wavePhase))
+    return (1 + (WAVE.boost - 1) * waveW(this.wavePhase)) / WAVE_NORM
+  }
+
+  /** The odds as they stand THIS instant — the number the display prints. */
+  get oddsNow () { return this.odds / this.waveMult }
 
   /** 0..1 — how worked the launcher is right now. 0 is rested, 1 is flat out. */
   get worked () { return Math.min(1, this.heat / HEAT_FULL) }
@@ -706,10 +796,18 @@ export class Machine {
     if (this.holds > 0) {
       this.holds--
       const odds = this.odds
-      const win = this.rng() < 1 / odds
+      // The tide, applied at the one honest moment: the instant the ticket is
+      // drawn. Same single rng draw as ever — the wave scales the threshold,
+      // not the stream.
+      const win = this.rng() < Math.min(0.5, this.waveMult / odds)
       // The small win rides the same ticket at much better odds. Decided here,
       // like everything, the instant the spin begins.
-      const ko = !win && this.rng() < 1 / this.S.koatariOdds
+      // The small win rides the tide too — during the welcome wave this is
+      // what "a low-scoring jackpot right away" mostly IS: at amadeji's 1/28
+      // book odds the welcome crest brings it near the 0.5 cap, so a new
+      // player's first minute almost always contains the attacker blinking
+      // open. Same cap, same single draw.
+      const ko = !win && this.rng() < Math.min(0.5, this.waveMult / this.S.koatariOdds)
       // A "reach" (リーチ) is the near-miss engine: two symbols match and the
       // third crawls. Clark et al. (2009) found near-misses recruit the same
       // reward circuitry as wins while being rated *less* pleasant — and,
@@ -728,7 +826,7 @@ export class Machine {
         // the spin begins. See spinSymbols for why the reels earn a draw now.
         ds: (this.rng() * 4294967296) >>> 0
       }
-      this.emit('spinStart', { odds, reach, holds: this.holds, kakuhen: this.kakuhen > 0 })
+      this.emit('spinStart', { odds, oddsNow: Math.round(this.oddsNow), reach, holds: this.holds, kakuhen: this.kakuhen > 0 })
     }
   }
 

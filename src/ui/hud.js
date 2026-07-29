@@ -3,11 +3,20 @@
 // Design law L6: the board is the spectacle, this is the field notebook lying
 // next to it. Small, monospace, low saturation, no animation.
 //
-// Design law L5: the machine tells the truth. Everything a regulated parlour is
-// allowed to hide is shown here — the live return-to-player, the real odds, the
-// number of tokens the player conjured out of nothing rather than won, and the
-// gap between wins the machine celebrated and wins that were actually net
-// positive. That last pair is the point of the whole exercise.
+// RESHAPED by operator's ruling (2026-07-29): the panel proper carries only
+// the four things a player actually plays with — their balls, the score to
+// hit, their current score, and the chain. Everything else (the ledger, the
+// launcher's diagnostics, the lottery counters, THE MODEL OF YOU, the
+// celebration audit, varnish) lives behind the FIELD NOTES door below,
+// closed by default. Design law L5 — the machine tells the truth — is not
+// repealed: every number is still there, one click down. The exhibit became
+// a drawer; the game got the desk.
+//
+// THE MODEL OF YOU's data did not leave the game with its demotion: the chain
+// section's decay bar is the piece of it that turned out to be PLAY — the
+// window the player is racing is now the most load-bearing gauge on the
+// panel, because the wave asks them to choose between resting (crest odds)
+// and feeding it (the multiplier that is most of their score).
 
 import { thresholdCrestSpeed, routeOdds, coinFlipDial } from '../sim/board.js'
 
@@ -23,7 +32,6 @@ export class Hud {
         <div class="q"><span id="rScore">0</span> <span id="rQuotaWrap" style="color:var(--dim);font-size:12px">/ <span id="rQuota">0</span></span></div>
         <div class="qbar" id="rBarWrap"><i id="rBar" style="width:0%"></i></div>
         <div class="stat" id="rBallsRow"><span>balls left</span><span id="rBalls">0</span></div>
-        <div class="stat"><span>chain</span><span id="rChain">—</span></div>
         <div class="stat" id="rTotalRow"><span>run total</span><span id="rTotal">0</span></div>
         <div class="stat" id="rSpentRow" style="display:none"><span>spent at the shop</span><span id="rSpent">0</span></div>
         <div class="tiny" id="rParts"></div>
@@ -34,6 +42,16 @@ export class Hud {
         <div class="big" id="hTokens">0</div>
         <div class="stat"><span>in play</span><span id="hBalls">0</span></div>
       </div>
+
+      <div class="sect">
+        <div class="k">THE CHAIN</div>
+        <div class="stat"><span>chain</span><span id="rChain">—</span></div>
+        <div class="meter uni"><i id="cBar" style="width:0%"></i></div>
+        <div class="tiny" id="cNote"></div>
+      </div>
+
+      <button id="hudMoreBtn" class="hudmore" type="button">FIELD NOTES ▸</button>
+      <div id="hudMore" style="display:none">
 
       <div class="sect">
         <div class="k">THE LEDGER</div>
@@ -93,6 +111,8 @@ export class Hud {
         <div class="stat"><span>presentation</span><span id="hVarn">100%</span></div>
         <div class="tiny">Physics, odds and payouts are identical at every setting.
           Press <b>V</b> to toggle.</div>
+      </div>
+
       </div>`
     for (const id of ['runbox', 'kTokens', 'rFloor', 'rScore', 'rQuota', 'rBar', 'rBalls',
       'rChain', 'rTotal', 'rParts', 'rQuotaWrap', 'rBarWrap', 'rBallsRow', 'rTotalRow',
@@ -100,10 +120,17 @@ export class Hud {
       'hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
       'hDial', 'hPull', 'hRoute', 'hRate', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
       'hOdds', 'hKoOdds', 'hSpins', 'hHolds', 'hJack', 'hKo', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
-      'hVal', 'mVal', 'hMot', 'mMot', 'hDiss', 'hCeleb', 'hDeserved', 'hLdw', 'hVarn']) {
+      'hVal', 'mVal', 'hMot', 'mMot', 'hDiss', 'hCeleb', 'hDeserved', 'hLdw', 'hVarn',
+      'cBar', 'cNote', 'hudMore', 'hudMoreBtn']) {
       this[id] = this.el.querySelector('#' + id)
     }
     this.threshold = thresholdCrestSpeed()
+    // The drawer. Closed is the resting state — the game got the desk.
+    this.hudMoreBtn.addEventListener('click', () => {
+      const open = this.hudMore.style.display === 'none'
+      this.hudMore.style.display = open ? '' : 'none'
+      this.hudMoreBtn.textContent = open ? 'FIELD NOTES ▾' : 'FIELD NOTES ▸'
+    })
   }
 
   update (m, dop, varnish, run = null) {
@@ -138,13 +165,31 @@ export class Hud {
         this.rBalls.textContent = Math.max(0, run.ballsLeft)
         this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')
       }
-      this.rChain.textContent = run.chain > 0 ? `${run.chain} · ×${run.mult.toFixed(1)}` : '—'
       // Every part fitted, named. A roguelike whose build is invisible is a
       // roguelike where the player cannot reason about the next pick.
       const counts = {}
       for (const id of run.loadout.parts) counts[id] = (counts[id] || 0) + 1
       this.rParts.textContent = Object.entries(counts)
         .map(([id, n]) => (n > 1 ? `${id}×${n}` : id)).join(' · ') || 'stock board'
+    }
+
+    // THE CHAIN — the panel's live gauge. The bar is the decay window
+    // draining: the clock the player races when the wave tempts them to rest.
+    // The note states the biggest measured fact about scoring (50–79% of all
+    // points are the multiplier's) the moment it becomes true of THIS run.
+    if (run && run.chain > 0) {
+      this.rChain.textContent = `${run.chain} · ×${run.mult.toFixed(1)}`
+      const w = Math.max(0, Math.min(1, run.chainLeft / run.loadout.comboWindow))
+      this.cBar.style.width = (w * 100).toFixed(0) + '%'
+      const P = run.provenance
+      const share = P.fromChain / Math.max(1, P.base + P.fromChain)
+      this.cNote.textContent = share > 0.4
+        ? `the multiplier is ${Math.round(share * 100)}% of everything you have scored`
+        : ''
+    } else {
+      this.rChain.textContent = '—'
+      this.cBar.style.width = '0%'
+      this.cNote.textContent = ''
     }
 
     this.hTokens.textContent = m.tokens
@@ -206,7 +251,8 @@ export class Hud {
           : ''
     this.hLaunchNote.style.color = jam ? 'var(--hot)' : ''
 
-    this.hOdds.textContent = '1 / ' + (m.kakuhen > 0 ? m.S.kakuhenOdds : m.S.jackpotOdds)
+    // Breathing odds: the wave's live figure first, the book figure beside it.
+    this.hOdds.textContent = `1 / ${Math.round(m.oddsNow)} · book ${m.odds}`
     this.hKoOdds.textContent = '1 / ' + m.S.koatariOdds
     this.hSpins.textContent = m.spins
     this.hHolds.textContent = `${m.holds}/4`

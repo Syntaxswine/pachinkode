@@ -17,6 +17,7 @@
 
 import { framePalette, trailColour, rippleColour, valueColour, hsl, scoreColour, scoreTier } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
+import { WAVE, waveW } from '../sim/machine.js'
 
 const TAU = Math.PI * 2
 const TRAIL_MAX = 26
@@ -343,7 +344,11 @@ export class Renderer {
     ctx.fillStyle = m.kakuhen > 0
       ? hsl(P.hue - 150, P.saturation * 1.2, 0.55)
       : hsl(P.hue, P.saturation * 0.35, 0.40)
-    ctx.fillText(`抽選 LOTTERY 1/${m.odds}`, x0 + w / 2, y0 + h * 0.13)
+    // The odds BREATHE — oddsNow is the wave's live figure, and the arrow is
+    // the tide's direction. A timing skill needs a clock the player can read,
+    // so the readout is the truth at this instant, not the book number.
+    const rising = m.wavePhase < WAVE.crest
+    ctx.fillText(`抽選 LOTTERY 1/${Math.round(m.oddsNow)} ${rising ? '↗' : '↘'}`, x0 + w / 2, y0 + h * 0.13)
 
     ctx.font = `500 ${fs}px ui-monospace, Menlo, Consolas, monospace`
 
@@ -1268,8 +1273,14 @@ export class Renderer {
     const reach = m.spin && m.spin.reach && m.spin.t / m.spin.dur > 0.58
 
     for (let i = 0; i < N; i++) {
-      // Base breathing, phase-staggered so the frame shimmers rather than blinks.
-      let b = (0.05 + 0.30 * dop.arousal) * (0.7 + 0.3 * Math.sin(t * 2.1 + i * 1.7))
+      // Base breathing, phase-staggered so the frame shimmers rather than
+      // blinks — and riding the WAVE: the whole frame lifts and quickens as
+      // the tide comes in. Rate and brightness carry the build (the legal
+      // channels), never pitch; and the crest promises nothing — it only
+      // raises odds the display is simultaneously printing.
+      const tide = waveW(m.wavePhase)
+      let b = (0.05 + 0.30 * dop.arousal + 0.22 * tide) *
+        (0.7 + 0.3 * Math.sin(t * (2.1 + 1.6 * tide) + i * 1.7))
       if (m.inJackpot && m.jackpot.fanfare > 0) {
         // Charging: the chase accelerates as the mouth approaches, and the
         // whole frame lifts. Rate carries the build, exactly as it does in
