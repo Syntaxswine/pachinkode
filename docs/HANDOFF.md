@@ -723,6 +723,20 @@ verdict scoring landed after it was measured — the numbers in run.js and SCIEN
 the FINAL post-everything sweep, and the lesson is that a measurement comment is stale the
 moment any economy change lands behind it.
 
+**The route recorder (995dcd9, operator's design, stated verbatim in the commit).** Recording is
+ALWAYS on: every ball's complete path, launcher to pocket, as `{x, y, v, c}` — position plus what
+the value map believed there at that moment — capped at 2,400 points a ball and 300 kept routes.
+The player still sees only the fading tail (now a windowed view of the full route; the visuals
+did not change). The **R key** is ROUTE MODE, the testing render: completed stories faint, live
+brighter, a dot where each ball died. It is an INSTRUMENT — draws at every varnish, colour
+chunked (per-segment colour at sixty full routes is ~70k strokes a frame; an instrument that
+halves the frame rate changes what it measures; measured 3.5 ms on / 2.2 off). The harness
+read-side is `__pachinkode.routes()` → `{live, done}` — this is the surface the planned testing
+software builds on: the canary catches the number, the route tells the story. Traps: routes
+clear with the board they describe (newSession/buildFloor); a warped ball is TWO routes and the
+gap between them IS the warp; the colour arrives as the machine learns, so fresh-session
+stories render silver and that is correct, not a bug.
+
 **And the tanuki (operator art, same day).** Four images in `images/` (originals + in-browser
 keyed cutouts; the processing story is in the commit). Title plate, back-room poster (福 — the
 dealer), cabinet-hall cutout, and the standing one twice: over the run-over score, and on the
@@ -731,6 +745,13 @@ because the character is the con's face. There is also an unexamined `.mp4` in `
 
 ## Left undone
 
+- **The dedicated testing software** (operator's request, floated 2026-07-28: "modular, runs in
+  the background"). The precedent is vugg-canary — a nightly deterministic sweep, a PASSIVE
+  instrument that accretes a record and never gates. The pieces already on the shelf: run-sim,
+  loadout-audit, calibrate (whose per-seed RTP SD of 21–39 points is itself the first thing the
+  canary should surface honestly — see SCIENCE on the resolution trap), the cue log awaiting
+  `cue-contingency.mjs` (a probe that would double as keystone 2's consumer), and now the route
+  recorder's `__pachinkode.routes()` as the story-side of any flagged number.
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
   floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one
   text field away, and the determinism is already there.
