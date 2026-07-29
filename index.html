@@ -188,6 +188,23 @@
 
   /* The best score, on the title screen. Big enough to be a target, quiet
      enough not to compete with the machine's own name. */
+  /* ── the tanuki ──
+     Operator-supplied art. The tanuki is the right mascot twice over: the
+     Shigaraki figure is Japan's icon of commercial luck, and real pachinko
+     machines sell themselves on licensed characters — so the game gets one.
+     Shell placements are dressing on menus (posters, plates); the LCD
+     appearance during a jackpot lives in board-render.js and obeys varnish. */
+  #titleTanuki { margin: 16px 0 0; width: 132px; height: 132px;
+                 box-shadow: 0 5px 22px rgba(0,0,0,.55); }
+  #cabTanuki { position: absolute; top: -6px; right: 6px; width: 128px; opacity: .95;
+               pointer-events: none; }
+  #brTanuki { float: right; width: 146px; margin: -6px 2px 12px 16px;
+              border: 1px solid #402530; box-shadow: 0 8px 26px rgba(0,0,0,.6);
+              pointer-events: none; }
+  #backroom .offers, #backroom .backrow { clear: both; }
+  #roTanuki { width: 118px; margin: 0 auto -4px; display: block; }
+  #cabinets .sheet { position: relative; }
+
   .titlebest { margin-top: 20px; text-align: center; letter-spacing: .18em;
                font-size: 11px; color: var(--dim); min-height: 34px; }
   .titlebest b { display: block; font-size: 28px; color: var(--hot); letter-spacing: .04em;
@@ -209,6 +226,8 @@
     #play { flex-direction: column; }
     #panel { flex: 0 0 auto; border-left: none; border-top: 1px solid var(--faint);
              max-height: 40vh; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+    /* The posters yield to the text on a phone; the sheets are single-column. */
+    #cabTanuki, #brTanuki { display: none; }
   }
 </style>
 </head>
@@ -222,6 +241,7 @@
     A pachinko machine built to real dimensions, with a switch on its own dopamine engine.<br>
     One knob. Eleven-millimetre steel. A lottery you do not control.
   </div>
+  <img id="titleTanuki" src="./images/tanuki-label.png" alt="" width="132" height="132">
   <div id="titleBest" class="titlebest"></div>
   <nav class="menu">
     <button id="resumeRun" style="display:none">RESUME RUN<small id="resumeSub"></small></button>
@@ -265,8 +285,9 @@
 <!-- ── cabinet select ─────────────────────────────────────────────────────── -->
 <section id="cabinets" class="screen">
   <div class="sheet">
+    <img id="cabTanuki" src="./images/tanuki-machine.png" alt="">
     <h2>CHOOSE A CABINET</h2>
-    <p class="note">Every one of these is a real class of Japanese machine. A harder cabinet
+    <p class="note" style="max-width:56ch">Every one of these is a real class of Japanese machine. A harder cabinet
       raises every floor's quota — and hands you a board that is already halfway built.
       Clearing floor twelve banks the win; the floors keep coming after it.</p>
     <div id="cabList"></div>
@@ -277,8 +298,9 @@
 <!-- ── the back room: the draft ───────────────────────────────────────────── -->
 <section id="backroom" class="screen">
   <div class="sheet">
+    <img id="brTanuki" src="./images/tanuki-fuku.png" alt="">
     <h2 id="brHead">THE BACK ROOM</h2>
-    <p class="note" id="brSub"></p>
+    <p class="note" id="brSub" style="max-width:54ch"></p>
     <div id="brOffers" class="offers"></div>
     <div class="backrow">
       <button id="brSkip">TAKE NOTHING<small style="display:block;color:var(--dim);font-size:9px;margin-top:3px">forfeits this floor's remaining picks</small></button>
@@ -289,6 +311,7 @@
 <!-- ── run over ───────────────────────────────────────────────────────────── -->
 <section id="runover" class="screen">
   <div class="sheet" style="text-align:center">
+    <img id="roTanuki" src="./images/tanuki-standing.png" alt="">
     <h2 id="roHead">THE RUN ENDS</h2>
     <div class="bigscore" id="roScore">0</div>
     <p class="note" id="roSub" style="margin:14px auto 0;max-width:56ch"></p>

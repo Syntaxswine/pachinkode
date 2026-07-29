@@ -679,6 +679,12 @@ Builder 2's section above, and the argument in `CUE_FAMILY` itself). `floorClear
 `jackpot(0.6)` to a koatari — it is the door closing behind you, not the news; the news already
 played.
 
+**And the tanuki (operator art, same day).** Four images in `images/` (originals + in-browser
+keyed cutouts; the processing story is in the commit). Title plate, back-room poster (福 — the
+dealer), cabinet-hall cutout, and the standing one twice: over the run-over score, and on the
+LCD during a jackpot — the licensed character every real machine sells itself on, varnish-gated
+because the character is the con's face. There is also an unexamined `.mp4` in `images/`.
+
 ## Left undone
 
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,

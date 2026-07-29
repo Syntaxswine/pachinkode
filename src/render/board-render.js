@@ -39,6 +39,14 @@ export class Renderer {
     this._shownTokens = null   // the counter's displayed value, easing to truth
     this._tokGlow = 0
     this.dpr = Math.min(2, globalThis.devicePixelRatio || 1)
+    // The machine's licensed character. Real machines sell themselves on the
+    // character that celebrates on the LCD during a jackpot — so this one has
+    // a tanuki (operator-supplied art), drawn ONLY during a jackpot and only
+    // under varnish: the character is the con's face, which makes it exactly
+    // the thing the switch exists to remove. Guarded so the renderer still
+    // constructs in a DOM-less harness.
+    this.tanuki = typeof Image !== 'undefined' ? new Image() : null
+    if (this.tanuki) this.tanuki.src = './images/tanuki-standing.png'
   }
 
   resize (cssW, cssH) {
@@ -396,6 +404,20 @@ export class Renderer {
       ctx.font = `500 ${Math.max(8, h * 0.10)}px ui-monospace, monospace`
       ctx.fillStyle = hsl(P.hue - 150, P.saturation * 1.2, 0.55)
       ctx.fillText(`確変 ${m.kakuhen}`, x0 + w / 2, y0 + h * 0.83)
+    }
+
+    // The character, celebrating on the LCD — during a jackpot only, exactly
+    // as a licensed machine would. A slow bob, no strobe. Pure lacquer: at
+    // varnish 0 the screen keeps the numbers and loses the mascot, which is
+    // the honest split — the count is information, the character is the con.
+    if (m.inJackpot && P.varnish > 0.01 && this.tanuki &&
+        this.tanuki.complete && this.tanuki.naturalWidth) {
+      const tw = h * 0.46
+      const bob = Math.sin(this._t * 5.5) * h * 0.018
+      ctx.save()
+      ctx.globalAlpha = 0.92 * P.varnish
+      ctx.drawImage(this.tanuki, x1 - tw - w * 0.02, y0 + h * 0.34 + bob, tw, tw)
+      ctx.restore()
     }
 
     // 保留 — the pending queue.
