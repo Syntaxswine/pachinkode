@@ -1099,6 +1099,13 @@ function handleEvents (events) {
         synth.launch(ev.power, ev.worked, state.varnish)
         break
 
+      case 'flap':
+        // The wings thrown by the navel (hane spec). A servo clack, and the
+        // board notices — geometry news, not money news.
+        synth.flap(ev.open, state.varnish)
+        if (ev.open) renderer.lampBurst(0.25)
+        break
+
       case 'heso': {
         // The value of a start-pocket entry is not the three balls it pays. It is
         // three balls plus a lottery ticket, and the ticket is worth far more.
@@ -1332,6 +1339,10 @@ function handleEvents (events) {
 /** Expected token value of one start-pocket entry, paid + ticket. */
 function hesoValue () {
   const S = machine.S
+  // The flapper's navel buys no ticket — its value is the 3 balls plus the
+  // wing openings it triggers. Rough model input (fun-first, not calibrated):
+  // two openings, ~0.6 tulip catches each at spec pay 7.
+  if (S.flapper) return 3 + S.flapPulses * 0.6 * S.tulipPay
   const catchP = 1 - Math.pow(1 - 1 / S.kakuhenOdds, S.stSpins)
   const chain = 1 / (1 - S.kakuhenChance * catchP)
   const perJackpot = S.rounds * S.entriesPerRound * S.payPerEntry * 0.62  // measured harvest

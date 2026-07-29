@@ -86,6 +86,7 @@ export const CUE_FAMILY = {
 
   impact: 'mechanism',
   split: 'mechanism',
+  flap: 'mechanism',
   launch: 'mechanism',
   ratchet: 'mechanism',
   foul: 'mechanism',
@@ -826,6 +827,28 @@ export class Synth {
    * Mechanism, not reward — it makes the party's structure audible with eyes
    * closed, which a bare stop-fade never did.
    */
+  /** The flapper's wing servo — a dry mechanical clack, higher opening than
+   *  closing, exactly the register of a solenoid throwing a linkage. Family
+   *  'mechanism': it announces geometry, not money. */
+  flap (open, varnish = 1) {
+    this.mark('flap')
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const o = ctx.createOscillator()
+    o.type = 'square'
+    o.frequency.setValueAtTime(open ? 640 : 430, t)
+    o.frequency.exponentialRampToValueAtTime(open ? 210 : 140, t + 0.045)
+    const g = ctx.createGain()
+    g.gain.setValueAtTime(0.07 * (0.5 + 0.5 * v), t)
+    g.gain.exponentialRampToValueAtTime(0.0006, t + 0.07)
+    const bp = ctx.createBiquadFilter()
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.2
+    o.connect(bp).connect(g).connect(this.busImpacts)
+    o.start(t); o.stop(t + 0.08)
+  }
+
   gate (open, varnish = 1) {
     this.mark('gate')
     if (!this.ready) return

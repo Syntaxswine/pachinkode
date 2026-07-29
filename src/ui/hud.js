@@ -251,16 +251,29 @@ export class Hud {
           : ''
     this.hLaunchNote.style.color = jam ? 'var(--hot)' : ''
 
-    // Breathing odds: the wave's live figure first, the book figure beside it.
-    this.hOdds.textContent = `1 / ${Math.round(m.oddsNow)} · book ${m.odds}`
-    this.hKoOdds.textContent = '1 / ' + m.S.koatariOdds
-    this.hSpins.textContent = m.spins
-    this.hHolds.textContent = `${m.holds}/4`
-    this.hJack.textContent = m.jackpots
-    this.hKo.textContent = m.koataris
-    this.hLottery.textContent = m.kakuhen > 0
-      ? `確変 KAKUHEN — ${m.kakuhen} spins left at raised odds`
-      : 'The start pocket pays 3 and buys one ticket. Small win: the attacker blinks open. Big win: it stays.'
+    if (m.S.flapper) {
+      // The flapper has no lottery to report — the drawer says so instead of
+      // printing dead zeroes that beg questions.
+      this.hOdds.textContent = '—'
+      this.hKoOdds.textContent = '—'
+      this.hSpins.textContent = '—'
+      this.hHolds.textContent = '—'
+      this.hJack.textContent = '—'
+      this.hKo.textContent = '—'
+      this.hLottery.textContent =
+        `No lottery in this cabinet. The navel works the wings (${m.flaps} openings); the wings pay ${m.S.tulipPay}.`
+    } else {
+      // Breathing odds: the wave's live figure first, the book figure beside it.
+      this.hOdds.textContent = `1 / ${Math.round(m.oddsNow)} · book ${m.odds}`
+      this.hKoOdds.textContent = '1 / ' + m.S.koatariOdds
+      this.hSpins.textContent = m.spins
+      this.hHolds.textContent = `${m.holds}/4`
+      this.hJack.textContent = m.jackpots
+      this.hKo.textContent = m.koataris
+      this.hLottery.textContent = m.kakuhen > 0
+        ? `確変 KAKUHEN — ${m.kakuhen} spins left at raised odds`
+        : 'The start pocket pays 3 and buys one ticket. Small win: the attacker blinks open. Big win: it stays.'
+    }
 
     const da = Math.max(0, Math.min(1, (dop.da - 1) / 2.7))
     this.hDa.textContent = (dop.delta >= 0 ? '+' : '') + dop.delta.toFixed(2)

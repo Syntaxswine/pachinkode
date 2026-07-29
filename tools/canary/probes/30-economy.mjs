@@ -35,8 +35,12 @@ export default {
       const se = sd / Math.sqrt(rtps.length)
       metrics.specs[spec] = { mean: +(mean * 100).toFixed(1), sd: +(sd * 100).toFixed(1), rtps: rtps.map(r => +(r * 100).toFixed(1)) }
       parts.push(`${spec} ${(mean * 100).toFixed(0)}%±${(sd * 100).toFixed(0)}`)
-      if (mean + 2 * se < BAND.lo) anomalies.push(`${spec}: RTP ${(mean * 100).toFixed(1)}% ± ${(2 * se * 100).toFixed(1)} sits entirely BELOW the 1-hour floor (33.3%)`)
-      if (mean - 2 * se > BAND.hi) anomalies.push(`${spec}: RTP ${(mean * 100).toFixed(1)}% ± ${(2 * se * 100).toFixed(1)} sits entirely ABOVE the 1-hour ceiling (220%)`)
+      // Flapper specs (no lottery) are outside the type-test's subject matter —
+      // their RTP is recorded for drift-watching but never band-flagged.
+      if (!SPECS[spec].flapper) {
+        if (mean + 2 * se < BAND.lo) anomalies.push(`${spec}: RTP ${(mean * 100).toFixed(1)}% ± ${(2 * se * 100).toFixed(1)} sits entirely BELOW the 1-hour floor (33.3%)`)
+        if (mean - 2 * se > BAND.hi) anomalies.push(`${spec}: RTP ${(mean * 100).toFixed(1)}% ± ${(2 * se * 100).toFixed(1)} sits entirely ABOVE the 1-hour ceiling (220%)`)
+      }
     }
 
     return { summary: parts.join(' · '), metrics, anomalies }

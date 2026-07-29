@@ -833,6 +833,23 @@ merchandise — is keyed (`images/tanuki-balls.png`) and installed as THE SHOP's
 two-tenant signage contract now swaps the poster too (`syncShop` hangs the ball tanuki,
 `syncBackroom` restores the 福 poster).
 
+**THE FLAPPER (operator's design: "a cabinet that has no lottery in it, just extra
+buckets").** The `hane` spec is a true 羽根物: NO digital lottery — no reels, holds, kakuhen,
+jackpot, or wave. The navel is a mechanical trigger: each entry queues two wing pulses
+(open 0.85 s, shut 0.30 s — the class's signature double-flap; queue capped at 6 like held
+spins), `Machine#tickFlapper` plays them out, and the tulips' wings ARE the payout organ
+(spec `tulipPay: 7` vs the lottery machines' token 2). The HANEMONO cabinet now carries this
+spec with a bucket-carpeted parts list — its old identity (amadeji + stuck-open tulips) was
+a fake of exactly this. The LCD becomes a mechanical readout (羽 OPEN / CLOSED + opening
+count); the FIELD NOTES lottery rows print — with an explanation instead of dead zeroes;
+`chainLength` refuses the spec; the canary's economy probe records its RTP but never
+band-flags it (no lottery = outside the type-test's subject). MEASURED: RTP 88–94% with a
+tiny per-seed spread — no kakuhen tail makes it the game's one LOW-VARIANCE machine, true to
+the class — and the curve clears 100% with the crunch at floor 2 (138%). One instrument
+lesson re-learned live: a verification harness drumming taps at max cadence and low power
+put itself in the channel-jam regime (83% fouls, the documented number) and looked exactly
+like a flapper bug; the fix was to play legally (0.4 s gaps), not to touch the machine.
+
 **The wall-side gold split (operator's find, fixed same day).** The twin's blind sideways
 offset could birth it PAST a wall's centerline at rail-side nails, where the contact solver
 resolves it to the far face — a ball living in dead space, occasionally knocked back into play.

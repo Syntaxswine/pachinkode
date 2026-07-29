@@ -65,6 +65,21 @@ export const SPECS = {
     note: 'Not a real regulatory class. For watching the machinery work.',
     jackpotOdds: 39, kakuhenOdds: 7.8, kakuhenChance: 0.50, stSpins: 8,
     rounds: 5, payPerEntry: 12, entriesPerRound: 8, koatariOdds: 15
+  },
+  hane: {
+    // The FLAPPER — a true 羽根物. NO digital lottery: no reels, no holds, no
+    // kakuhen, no jackpot, no wave. The navel is a mechanical trigger — each
+    // entry works the tulip wings through a flap choreography (two openings,
+    // which is the real machines' signature rhythm), and the wings are the
+    // whole payout organ, so their pay is far above the lottery specs' token
+    // TULIP_PAY. Everything the machine gives, it gives through geometry the
+    // player can watch. Operator's design: "no lottery in it, just extra
+    // buckets... the bumper bucket in the middle opens and closes the flaps."
+    label: 'HANEMONO 羽根物',
+    note: 'No lottery at all. The navel works the wings; the wings pay.',
+    flapper: true,
+    flapOpen: 0.85, flapShut: 0.30, flapPulses: 2,
+    tulipPay: 7
   }
 }
 
@@ -130,6 +145,7 @@ export const WAVE_NORM = 1 + (WAVE.boost - 1) * WAVE_MEAN
 
 /** Mean number of jackpots per chain, from the spec alone. Used by calibrate.js. */
 export function chainLength (S) {
+  if (S.flapper) return 1               // no lottery, no chains of jackpots
   const catchP = 1 - Math.pow(1 - 1 / S.kakuhenOdds, S.stSpins)
   return 1 / (1 - S.kakuhenChance * catchP)
 }
@@ -284,6 +300,9 @@ export class Machine {
 
     // Lottery state.
     this.holds = 0
+    // The flapper's wing choreography (hane spec only; inert elsewhere).
+    this.flap = { queue: 0, pulse: null }
+    this.flaps = 0
     this.spin = null                 // {t, dur, outcome, reach, ko}
     this.kakuhen = 0                 // remaining ST spins at elevated odds
     this.jackpot = null              // {round, entries, t, shutAt, paid}
@@ -572,8 +591,37 @@ export class Machine {
       this.onPocket(ev)
     }
 
-    this.tickLottery(dt)
+    if (this.S.flapper) this.tickFlapper(dt)
+    else this.tickLottery(dt)
     return this
+  }
+
+  /**
+   * The flapper's whole brain (hane spec). No RNG at all — a chucker entry
+   * queued pulses, and this plays them out: open for flapOpen, shut for
+   * flapShut, next pulse. The tulips' wings are driven directly; a sticky
+   * tulip (the STUCK TULIPS part) stays open regardless, exactly as on the
+   * lottery machines.
+   */
+  tickFlapper (dt) {
+    const f = this.flap
+    if (!f.pulse && f.queue > 0) {
+      f.queue--
+      f.pulse = { open: true, t: this.S.flapOpen }
+      this.flaps++
+      this.emit('flap', { open: true })
+    }
+    if (f.pulse) {
+      f.pulse.t -= dt
+      if (f.pulse.t <= 0) {
+        if (f.pulse.open) {
+          f.pulse = { open: false, t: this.S.flapShut }
+          this.emit('flap', { open: false })
+        } else f.pulse = null
+      }
+    }
+    const wingsOpen = !!(f.pulse && f.pulse.open)
+    for (const t of this.parts.tulips) if (!t.sticky) t.open = wingsOpen
   }
 
   onPocket (ev) {
@@ -599,6 +647,13 @@ export class Machine {
       case 'chucker':
         this.pay(HESO_PAY, 'heso')
         this.emit('heso', { x: ev.x, y: ev.y, holds: this.holds, ball: ev.ball })
+        // On the flapper the navel buys no ticket — it works the WINGS. The
+        // pulses queue (up to a small cap, like held spins) so rapid entries
+        // keep the wings busy rather than being swallowed.
+        if (this.S.flapper) {
+          this.flap.queue = Math.min(6, this.flap.queue + this.S.flapPulses)
+          break
+        }
         if (this.holds < HOLD_MAX) {
           this.holds++
         } else {
@@ -622,7 +677,9 @@ export class Machine {
         break
       }
       case 'tulip':
-        this.pay(TULIP_PAY, 'tulip')
+        // On the flapper the wings ARE the payout organ (spec tulipPay);
+        // on lottery machines they stay the token TULIP_PAY.
+        this.pay(this.S.tulipPay || TULIP_PAY, 'tulip')
         this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor, ball: ev.ball })
         break
       case 'attacker':

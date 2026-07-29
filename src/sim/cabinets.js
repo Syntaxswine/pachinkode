@@ -62,12 +62,20 @@ export const CABINETS = {
     id: 'hanemono',
     label: 'HANEMONO',
     jp: '羽根物',
-    spec: 'amadeji',
+    // The REAL winged machine now (operator's request): the `hane` spec has
+    // NO digital lottery — no reels, no jackpot, no wave. The navel is a
+    // mechanical trigger that works the tulip wings (two openings per entry,
+    // the class's signature rhythm), the wings pay 7, and the board starts
+    // carpeted in buckets. Everything this cabinet gives, it gives through
+    // geometry the player can watch — which was always this class's argument
+    // against the digipachi it lost the floor to.
+    spec: 'hane',
     difficulty: 1.25,
-    parts: ['tulips', 'bucket', 'widen', 'balls'],
+    parts: ['bucket', 'bucket', 'bucket', 'bucketvalue', 'widen', 'balls'],
     unlock: { bestFloor: 6 },
-    note: 'The "winged machine", built around its tulips. Both are wired open from the ' +
-      'first ball, which makes the scatter field a different playfield entirely.'
+    note: 'The "winged machine", and the honest one: no lottery anywhere in the cabinet. ' +
+      'The navel works the wings, the wings pay, and every ball that scores was watched ' +
+      'all the way in.'
   },
   kenri: {
     id: 'kenri',

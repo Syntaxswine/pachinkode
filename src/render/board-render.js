@@ -335,6 +335,28 @@ export class Renderer {
     const y0 = this.Y(H.y0 - 0.008), y1 = this.Y(H.y1 - 0.030)
     const w = x1 - x0, h = y1 - y0
 
+    // ── the flapper's screen ─────────────────────────────────────────────
+    // The hane spec has no lottery, so its LCD is not a stage — it is a
+    // MECHANICAL READOUT: what the wings are doing right now, and the count
+    // of times the navel has worked them. No reels, no verdicts, no seed.
+    if (m.S.flapper) {
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = `500 ${Math.max(7, h * 0.085)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(P.hue, P.saturation * 0.35, 0.40)
+      ctx.fillText('羽根物 NO LOTTERY', x0 + w / 2, y0 + h * 0.13)
+      const open = m.parts.tulips.some(t => t.open)
+      ctx.font = `600 ${Math.max(12, h * 0.30)}px ui-monospace, monospace`
+      ctx.fillStyle = open
+        ? hsl(44, P.saturation * 1.1, 0.62)
+        : hsl(P.hue, P.saturation * 0.30, 0.34)
+      ctx.fillText(open ? '羽 OPEN' : 'CLOSED', x0 + w / 2, y0 + h * 0.46)
+      ctx.font = `500 ${Math.max(7, h * 0.10)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(P.hue, P.saturation * 0.35, 0.45)
+      ctx.fillText(`翼 ${m.flaps} openings`, x0 + w / 2, y0 + h * 0.78)
+      return
+    }
+
     ctx.fillStyle = hsl(P.hue + 4, P.saturation * 0.35, 0.055 + 0.03 * dop.arousal)
     ctx.fillRect(x0, y0, w, h)
     ctx.strokeStyle = hsl(P.hue, P.saturation * 0.25, 0.24)
