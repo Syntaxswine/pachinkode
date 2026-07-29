@@ -8,7 +8,8 @@
     "test": "node --test \"test/**/*.test.js\"",
     "headless": "node tools/headless.js",
     "calibrate": "node tools/calibrate.js",
-    "serve": "node tools/serve.js"
+    "serve": "node tools/serve.js",
+    "canary": "node tools/canary/canary.mjs"
   },
   "license": "MIT"
 }

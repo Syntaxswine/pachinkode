@@ -743,15 +743,42 @@ dealer), cabinet-hall cutout, and the standing one twice: over the run-over scor
 LCD during a jackpot — the licensed character every real machine sells itself on, varnish-gated
 because the character is the con's face. There is also an unexamined `.mp4` in `images/`.
 
-## Left undone
+## The canary · 2026-07-29
 
-- **The dedicated testing software** (operator's request, floated 2026-07-28: "modular, runs in
-  the background"). The precedent is vugg-canary — a nightly deterministic sweep, a PASSIVE
-  instrument that accretes a record and never gates. The pieces already on the shelf: run-sim,
-  loadout-audit, calibrate (whose per-seed RTP SD of 21–39 points is itself the first thing the
-  canary should surface honestly — see SCIENCE on the resolution trap), the cue log awaiting
-  `cue-contingency.mjs` (a probe that would double as keystone 2's consumer), and now the route
-  recorder's `__pachinkode.routes()` as the story-side of any flagged number.
+The testing software the operator asked for ("modular and can run in the background") is built:
+`tools/canary/canary.mjs` plus one file per probe in `tools/canary/probes/`, run with
+`npm run canary` (or `--quick` for minutes instead of tens of minutes, `--probe <name>`,
+`--list`). Each sweep appends a JSON line to `tools/canary/records/log.jsonl` (gitignored — the
+machine's lab notebook, not the repo's claim) and prints an annotated summary. Its four laws are
+in the runner's header; the two that must survive any future edit:
+
+- **Passive instrument, never a gate.** The canary exits 0 no matter what it finds. It RUNS
+  loadout-audit (which stays a gate) and reports that verdict without adopting the exit code. A
+  monitor that halts gets routed around, and a record with gaps where the interesting nights
+  were is worthless.
+- **Hard invariants before statistics.** The probe order is deliberate: `invariants` runs a live
+  machine and checks `sinceLaunch ≥ 0` (the negative-dt bug's own signature — the one that wore
+  the channel jam's face), ledger conservation (`tokens === conjured + won + bought − spent`,
+  which every token path must balance), finite ball state, and the keystone identity under
+  fuzzed scoring. When a statistical probe flags something, read the invariants line before
+  building a story about mechanics.
+
+The statistical probes carry their own error bars: `economy` reports RTP mean ± SD per spec and
+flags only when mean ± 2 SE sits entirely outside the 1-hour band (the resolution trap, obeyed
+nightly); `curve` shells out to run-sim — nothing modelled twice — and flags only the ≥85%
+on-ramp claim, recording the rest for pooled-night eyes; the cost column is never flagged (it is
+policy-dependent through the carry denominator). A probe that cannot parse its input reports
+BLINDNESS as an anomaly — an instrument must refuse to return noise shaped like an answer, and
+`test/canary.test.js` pins every alarm path with stubbed inputs, because an instrument never
+seen to alarm is a decoration.
+
+**Left for the canary:** it is not yet on a schedule (the operator should approve the standing
+task; `npm run canary` nightly is the intent), and the probe it still wants is
+`cue-contingency` — the keystone-2 consumer — which needs the event→voice wiring extracted from
+main.js into something headless before it can be honest (measuring a re-implementation of the
+wiring would be modelling twice, the sin everything else here avoids).
+
+## Left undone
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
   floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one
   text field away, and the determinism is already there.
