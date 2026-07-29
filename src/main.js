@@ -9,7 +9,8 @@
 import { Machine, SPECS, FIRE_RATES, LAUNCH_INTERVAL, TULIP_PAY } from './sim/machine.js'
 import { BOARD, thresholdCrestSpeed, routeOdds, foulOdds } from './sim/board.js'
 import { Dopamine } from './sim/dopamine.js'
-import { Renderer } from './render/board-render.js'
+import { Renderer, registerMotifArt } from './render/board-render.js'
+import { MOTIFS } from './sim/motifs.js'
 import { Synth } from './audio/synth.js'
 import { Hud } from './ui/hud.js'
 import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet } from './sim/run.js'
@@ -70,6 +71,15 @@ load()
 
 const canvas = $('#board')
 const renderer = new Renderer(canvas)
+// Motif artwork registers RENDER-SIDE, keyed by motif id (L4: the sim's motif
+// objects carry geometry only). The rect is the motif's own mapping frame, so
+// the picture and the brass laid out to match it can never drift apart.
+registerMotifArt('tanuki', {
+  src: './images/tanuki-balls.png',
+  x: MOTIFS.tanuki.img.x, y: MOTIFS.tanuki.img.y,
+  w: MOTIFS.tanuki.img.w, h: MOTIFS.tanuki.img.h,
+  alpha: 0.34
+})
 const synth = new Synth()
 const hud = new Hud($('#panel'))
 let machine = null

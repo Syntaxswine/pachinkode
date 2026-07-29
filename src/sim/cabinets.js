@@ -34,6 +34,8 @@
  *   { bestFloor, lifetimeScore, wins }
  * An empty unlock means always available.
  */
+import { MOTIFS } from './motifs.js'
+
 export const CABINETS = {
   floor: {
     id: 'floor',
@@ -77,6 +79,26 @@ export const CABINETS = {
       'The navel works the wings, the wings pay, and every ball that scores was watched ' +
       'all the way in.'
   },
+  tanukidai: {
+    id: 'tanukidai',
+    label: 'TANUKIDAI',
+    jp: 'たぬき台',
+    // The 1970s move (operator's design, from a Nishijin Deluxe Super
+    // reference): a picture behind the nails, and the brass laid out to MATCH
+    // it. The board IS the identity — the operator's ball tanuki in outline
+    // nails, the heso on its literal navel (the game's start pocket has been
+    // called ヘソ, the navel, since before this cabinet made it true), tulips
+    // at the paw and the tail's heart, a small shrine housing for the warps,
+    // and the reels pushed to the top-right margin where the old machines
+    // kept their rainbow arcs. Gentle spec: this is a machine you look at.
+    spec: 'amadeji',
+    difficulty: 1.10,
+    parts: [],
+    motif: MOTIFS.tanuki,
+    unlock: { bestFloor: 3 },
+    note: 'A 1970s picture board. The tanuki is the layout: its navel is the navel, ' +
+      'its paw and tail catch, and the lottery reads out in the corner like a marquee.'
+  },
   kenri: {
     id: 'kenri',
     label: 'KENRIMONO',
@@ -115,7 +137,7 @@ export const CABINETS = {
   }
 }
 
-export const CABINET_ORDER = ['floor', 'ippatsu', 'hanemono', 'kenri', 'digipachi', 'uramono']
+export const CABINET_ORDER = ['floor', 'ippatsu', 'tanukidai', 'hanemono', 'kenri', 'digipachi', 'uramono']
 
 // ── the record ──────────────────────────────────────────────────────────────
 //

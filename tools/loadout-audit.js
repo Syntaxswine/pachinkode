@@ -38,10 +38,12 @@ let checked = 0
 let broken = 0
 const failures = []
 
-function check (label, partIds) {
+function check (label, partIds, motif = null) {
   let built
   try {
-    built = buildBoard(resolveLoadout(partIds))
+    const L = resolveLoadout(partIds)
+    L.motif = motif
+    built = buildBoard(L)
   } catch (e) {
     // A thrown build is a PASS for the wedge question and a FAIL for the game:
     // it means a site could not be placed legally. Report it as broken, because
@@ -104,7 +106,11 @@ for (let b = 0; b <= SITE_ORDER.length; b++) {
 
 // ── 3. every cabinet's starting board ───────────────────────────────────────
 console.log('  cabinets, as dealt')
-for (const key of CABINET_ORDER) check(`cabinet:${key}`, CABINETS[key].parts || [])
+// The motif travels with the cabinet — the gate must audit the board the
+// player actually gets, not the standard grid wearing the cabinet's parts
+// (the census's headline finding: a motif cabinet was otherwise INVISIBLE
+// to this gate).
+for (const key of CABINET_ORDER) check(`cabinet:${key}`, CABINETS[key].parts || [], CABINETS[key].motif || null)
 
 // ── 4. every cabinet, fully built out ───────────────────────────────────────
 //
@@ -115,7 +121,7 @@ console.log('  cabinets, maxed out')
 for (const key of CABINET_ORDER) {
   const ids = [...(CABINETS[key].parts || [])]
   for (const p of PARTS) for (let n = 0; n < (p.max || 1); n++) ids.push(p.id)
-  check(`cabinet:${key} MAXED`, ids)
+  check(`cabinet:${key} MAXED`, ids, CABINETS[key].motif || null)
 }
 
 // ── 5. random walks ─────────────────────────────────────────────────────────

@@ -712,10 +712,15 @@ test('exactly one cabinet is available to a new player', () => {
 
 test('every cabinet builds a legal board from its starting parts', () => {
   for (const key of CABINET_ORDER) {
-    const L = resolveLoadout(CABINETS[key].parts || [])
+    const cab = CABINETS[key]
+    const L = resolveLoadout(cab.parts || [])
+    L.motif = cab.motif || null
     const built = buildBoard(L)
     assert.ok(built.parts.buckets.length >= 2, `${key} starts with too few buckets`)
-    assert.ok(built.world.nails.length > 40, `${key} lost its nail field`)
+    // A motif declares its own nail floor (a contour field is legitimately
+    // sparser than the grid); the stock literal stays for stock cabinets.
+    const floor = cab.motif ? cab.motif.minNails : 40
+    assert.ok(built.world.nails.length > floor, `${key} lost its nail field (${built.world.nails.length} <= ${floor})`)
   }
 })
 

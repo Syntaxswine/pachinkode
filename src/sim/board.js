@@ -42,6 +42,7 @@ import { World, makeBall, MAT, BALL_R } from './world.js'
 import { closestOnSegment } from './vec.js'
 import { BOARD } from './board-consts.js'
 import { baseLoadout, BUCKET_SITES } from './loadout.js'
+import { inSilhouette, rosetteNails } from './motifs.js'
 
 export { BOARD }
 
@@ -108,9 +109,42 @@ export function buildBoard (loadout = baseLoadout(), motif = loadout.motif || nu
   buildPockets(world, parts, loadout, motif)
   buildBuckets(world, parts, loadout)
   parts.wedges = clearWedges(world, parts)
+  if (motif) validateMotifBoard(world, parts, motif)
 
   world.markDirty()
   return { world, parts }
+}
+
+/**
+ * The motif legality gate, run AFTER the wedge sweep so it judges the board
+ * the player actually gets. Throws with every violation named, because a
+ * motif that fails one law usually fails several and a builder wants the
+ * whole list. These are the field-interior laws from the census:
+ * everything inside CLEAR_R, nothing in the drain band or the launch
+ * channel (a channel nail breaks the _enteredPlay refund invariant), every
+ * bucket sensor priced, and the warp stage over the heso.
+ */
+export function validateMotifBoard (world, parts, motif) {
+  const bad = []
+  for (const n of world.nails) {
+    const d = Math.hypot(n.x - R.cx, n.y - R.cy)
+    if (d > CLEAR_R + 1e-9) bad.push(`nail outside CLEAR_R at (${n.x.toFixed(3)}, ${n.y.toFixed(3)})`)
+    if (n.y > 0.400 + 1e-9) bad.push(`nail in the drain band at (${n.x.toFixed(3)}, ${n.y.toFixed(3)})`)
+  }
+  for (const s of world.sensors) {
+    if (s.kind === 'bucket' && !parts.buckets.find(b => b.site === s.id)) {
+      bad.push(`bucket sensor '${s.id}' has no parts entry — it would silently score 1`)
+    }
+  }
+  const st = parts.stage
+  if (parts.sensors.warpL || parts.sensors.warpR) {
+    if (!st) bad.push('warp mouths without a stage to deliver to')
+    else if (Math.abs(parts.heso.x - st.x) > st.halfWidth) bad.push('the stage does not sit over the heso')
+  }
+  if (world.nails.length < (motif.minNails || 0)) {
+    bad.push(`only ${world.nails.length} nails survived — under the motif's declared floor of ${motif.minNails}`)
+  }
+  if (bad.length) throw new Error(`motif '${motif.id}' failed board validation:\n  ` + bad.join('\n  '))
 }
 
 /**
@@ -412,14 +446,20 @@ function buildHousing (world, parts, L, motif = null) {
   // stage performance is a marketed characteristic of real machines. The rule is
   // that none of them may be a stable equilibrium: a ball always leaves, and
   // never at the same instant twice.
-  const x0 = 0.126, x1 = 0.314, y0 = 0.166, y1 = 0.292, rr = 0.020
+  // A motif may relocate and reshape the housing (a spec with the same five
+  // numbers travelling together), but the dome law and the roof-carved warp
+  // mouths below apply to EVERY housing, wherever it stands.
+  const spec = (motif && motif.housing) ||
+    { x0: 0.126, x1: 0.314, y0: 0.166, y1: 0.292, rise: 0.038, warps: [0.163, 0.277] }
+  const { x0, x1, y0, y1 } = spec
+  const rr = 0.020
   const seg = (ax, ay, bx, by) => world.addSegment(ax, ay, bx, by, SEG_R, MAT.wall, 'housing')
 
   // A domed roof rather than a gable. A gable has an apex, an apex is a balance
   // point, and a deterministic simulation will park a ball on a balance point
   // forever. The exponent on t skews the crown off-centre so there is no exact
   // equilibrium at the midline either.
-  const rise = 0.038
+  const rise = spec.rise
   const dome = (x) => {
     const t = Math.min(1, Math.max(0, (x - x0) / (x1 - x0)))
     return y0 - rise * Math.sin(Math.PI * Math.pow(t, 1.14))
@@ -433,7 +473,7 @@ function buildHousing (world, parts, L, motif = null) {
   // 2.8 mm steps. The roof spans are carved around the mouth at build time, so
   // widening genuinely moves brass rather than just widening a sensor — a
   // sensor wider than its hole would score balls that bounced off the roof.
-  const warpLx = 0.163, warpRx = 0.277
+  const [warpLx, warpRx] = spec.warps
   const warpMouth = L.warpMouth
   const hw = clearHalf(warpMouth)
   const roofSpan = (from, to) => {
@@ -469,8 +509,16 @@ function buildHousing (world, parts, L, motif = null) {
   // so it stays. machine.js re-spawns the ball on the stage.
   parts.sensors.warpL = world.addSensor('warp', warpLx, roofY(warpLx) + 0.004, warpMouth, 0.012, 'warpL')
   parts.sensors.warpR = world.addSensor('warp', warpRx, roofYR(warpRx) + 0.004, warpMouth, 0.012, 'warpR')
-  // Where the stage spits a warped ball back out.
-  parts.stage = { x: 0.220, y: 0.292, halfWidth: 0.030 }
+  // Where the stage spits a warped ball back out. On a motif board it follows
+  // the housing's foot and centres on the motif's heso — the stage-over-heso
+  // law is what makes a warp feel lucky, and validateMotifBoard enforces it.
+  parts.stage = motif
+    ? { x: motif.heso.x, y: y1, halfWidth: 0.030 }
+    : { x: 0.220, y: 0.292, halfWidth: 0.030 }
+  // The relocated readout, if the motif claims margin space for it. Stamped
+  // here (null on the stock board) so the renderer's displayRect provider has
+  // one source; the stock display keeps deriving from the housing rect.
+  parts.displayRect = (motif && motif.displayRect) || null
 }
 
 function roundedRectPoints (x0, y0, x1, y1, r, seg) {
@@ -492,6 +540,7 @@ function roundedRectPoints (x0, y0, x1, y1, r, seg) {
 // --- the nail field -------------------------------------------------------
 
 function buildNailField (world, parts, L, motif = null) {
+  if (motif) return motifNailField(world, parts, L, motif)
   const { housing } = parts
   // Reported nail counts vary widely — roughly 100 on modern LCD-dominated boards,
   // 500+ on early machines, with ~200 a commonly quoted modern figure. There is no
@@ -571,6 +620,90 @@ function buildNailField (world, parts, L, motif = null) {
   }
 }
 
+/**
+ * The motif nail field — the 1970s move. Three populations:
+ *
+ *   THE CONTOUR: the image's traced silhouette, one nail per resampled point,
+ *   emitted in trace order as ORDINARY nails. The wedge sweep may cull them —
+ *   an authored nail is not a protected nail, and a contour that erodes at a
+ *   pinch is a contour that was trapping balls (census rule: only functional
+ *   nails join featureNails).
+ *
+ *   THE SPARSE GRID: the standard grid at a wider pitch, kept OUT of the
+ *   silhouette (padded) so the picture reads as a shape in the field rather
+ *   than a texture on it.
+ *
+ *   THE FUNCTIONAL BRASS: life nails at the motif's heso, its guide pair, and
+ *   the stock right-route ladder (the attacker is rail furniture, and the
+ *   rail is never a motif's — so its feed ladder isn't either).
+ *
+ * THE CORRIDOR is the one carve that makes an INTERIOR heso possible at all:
+ * a lane of half-width motif.corridorHalf from the housing's foot to the
+ * heso, kept clear of both grid and contour. On the tanuki it runs straight
+ * down the face — a ball reaches the navel by way of the nose.
+ */
+function motifNailField (world, parts, L, motif) {
+  const H = motif.housing
+  const heso = motif.heso
+  const pitchX = 0.0206 * motif.gridPitchMult
+  const pitchY = 0.0188 * motif.gridPitchMult
+
+  const inCorridor = (x, y) =>
+    Math.abs(x - heso.x) < motif.corridorHalf && y > H.y1 - 0.004 && y < heso.y
+  const usable = (x, y) => {
+    if (Math.hypot(x - R.cx, y - R.cy) > CLEAR_R) return false
+    if (y > 0.400) return false                       // the drain approach stays open
+    if (x > H.x0 - 0.013 && x < H.x1 + 0.013 &&
+        y > H.y0 - H.rise - 0.013 && y < H.y1 + 0.013) return false
+    if (inCorridor(x, y)) return false
+    for (const t of motif.tulips) if (Math.hypot(x - t.x, y - t.y) < 0.028) return false
+    if (Math.hypot(x - heso.x, y - heso.y) < 0.026) return false
+    return true
+  }
+
+  for (let row = 0; row < 24; row++) {
+    const y = 0.066 + row * pitchY
+    const off = (row % 2) ? pitchX / 2 : 0
+    for (let col = 0; col < 24; col++) {
+      const x = 0.026 + col * pitchX + off
+      if (!usable(x, y)) continue
+      if (inSilhouette(motif, x, y, 0.008)) continue
+      parts.nails.push(world.addNail(x, y))
+    }
+  }
+
+  for (const [x, y] of motif.contour) {
+    if (!usable(x, y)) continue
+    parts.nails.push(world.addNail(x, y))
+  }
+
+  // The brass flowers. Ordinary nails — legal by construction, but the sweep
+  // still gets the last word if one lands near a wall.
+  for (const r of motif.rosettes || []) {
+    for (const [x, y] of rosetteNails(r)) {
+      if (!usable(x, y) || inSilhouette(motif, x, y, 0.006)) continue
+      parts.nails.push(world.addNail(x, y))
+    }
+  }
+
+  // The life nails, exactly the stock construction, at the motif's heso.
+  const lnx = L.hesoGap / 2 + NAIL_R
+  parts.lifeNails = [
+    world.addNail(heso.x - lnx, heso.y - 0.006, NAIL_R),
+    world.addNail(heso.x + lnx, heso.y - 0.006, NAIL_R)
+  ]
+  parts.nails.push(world.addNail(heso.x - 0.042, heso.y - 0.020))
+  parts.nails.push(world.addNail(heso.x + 0.042, heso.y - 0.020))
+
+  parts.featureNails = []
+  for (let i = 0; i < 4; i++) {
+    const a = 22 + i * 11
+    const n = world.addNail(px(a, 0.176 - i * 0.004), py(a, 0.176 - i * 0.004))
+    parts.nails.push(n)
+    parts.featureNails.push(n)
+  }
+}
+
 // --- windmills, tulips ----------------------------------------------------
 
 function buildFurniture (world, parts, L, motif = null) {
@@ -594,8 +727,13 @@ function buildFurniture (world, parts, L, motif = null) {
   // mouths in the middle of the scatter field are a different playfield, not a
   // better one, and the wedge sweep below sees them in their open pose because
   // that is the pose they will spend the run in.
-  parts.tulips.push(makeTulip(world, 'tulipL', px(135, 0.140), py(135, 0.140), L))
-  parts.tulips.push(makeTulip(world, 'tulipR', px(45, 0.140), py(45, 0.140), L))
+  // A motif sites the tulips on its image's features (ids keep the stock
+  // vocabulary — positions move, organs never change name).
+  const tulipSpec = (motif && motif.tulips) || [
+    { id: 'tulipL', x: px(135, 0.140), y: py(135, 0.140) },
+    { id: 'tulipR', x: px(45, 0.140), y: py(45, 0.140) }
+  ]
+  for (const t of tulipSpec) parts.tulips.push(makeTulip(world, t.id, t.x, t.y, L))
 }
 
 function makeTulip (world, id, x, y, L) {
@@ -650,7 +788,9 @@ function buildPockets (world, parts, L, motif = null) {
   // fact about modern pachinko, and this game says it out loud.
   // Same lesson as the tulips: the heso is a cup, not a floating rectangle. The
   // only way in is down through the life nails.
-  const hx = 0.220, hy = 0.322, hhw = clearHalf(BOARD.mouthClosed, 0.0018), hd = 0.016
+  const hx = motif ? motif.heso.x : 0.220
+  const hy = motif ? motif.heso.y : 0.322
+  const hhw = clearHalf(BOARD.mouthClosed, 0.0018), hd = 0.016
   world.addSegment(hx - hhw, hy, hx - hhw, hy + hd, 0.0018, MAT.wall, 'heso-L')
   world.addSegment(hx + hhw, hy, hx + hhw, hy + hd, 0.0018, MAT.wall, 'heso-R')
   world.addSegment(hx - hhw, hy + hd, hx + hhw, hy + hd, 0.0018, MAT.wall, 'heso-B')
@@ -738,8 +878,12 @@ function buildBuckets (world, parts, L) {
   const hw = clearHalf(mouth, 0.0018)
   const depth = 0.016
 
+  // A motif owns its site table (same NAMES — the vocabulary law — different
+  // positions, cleared against the motif's own furniture). The gate audits
+  // whichever table the board actually uses.
+  const TABLE = (parts.motif && parts.motif.bucketSites) || BUCKET_SITES
   for (const b of L.buckets) {
-    const site = BUCKET_SITES[b.site]
+    const site = TABLE[b.site]
     if (!site) continue
     const { x, y } = site
     // Sited furniture must stay inboard of the launch channel, the same rule
