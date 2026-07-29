@@ -392,10 +392,19 @@ export class Renderer {
       ctx.font = `600 ${Math.max(9, h * 0.12)}px ui-monospace, monospace`
       ctx.fillStyle = hsl(44, P.saturation * 1.4, 0.60)
       ctx.fillText('小当たり  SMALL WIN', x0 + w / 2, y0 + h * 0.83)
+    } else if (resFresh && res.kind === 'lose' && res.seq) {
+      // 順目 — a straight. The run pays it in score; the display names it in
+      // the mid register: brighter than a miss, dimmer than a win.
+      ctx.font = `600 ${Math.max(9, h * 0.11)}px ui-monospace, monospace`
+      ctx.fillStyle = hsl(P.hue - 150, P.saturation * 1.1, 0.55)
+      ctx.fillText(`順目  STRAIGHT${res.paid ? `  +${res.paid}` : ''}`, x0 + w / 2, y0 + h * 0.83)
     } else if (resFresh && res.kind === 'lose') {
       ctx.font = `500 ${Math.max(8, h * 0.10)}px ui-monospace, monospace`
-      ctx.fillStyle = hsl(P.hue, P.saturation * 0.3, 0.38)
-      ctx.fillText('ハズレ  MISS', x0 + w / 2, y0 + h * 0.83)
+      ctx.fillStyle = res.paid
+        ? hsl(44, P.saturation * 0.8, 0.50)
+        : hsl(P.hue, P.saturation * 0.3, 0.38)
+      // The consolation states its size; a bare miss stays a bare miss.
+      ctx.fillText(res.paid ? `ハズレ  MISS · +${res.paid}` : 'ハズレ  MISS', x0 + w / 2, y0 + h * 0.83)
     } else if (m.spin && m.spin.reach && m.spin.t / m.spin.dur > STOP[1]) {
       ctx.font = `500 ${Math.max(8, h * 0.11)}px ui-monospace, monospace`
       ctx.fillStyle = hsl(44, P.saturation * 1.4, 0.55)
@@ -709,7 +718,9 @@ export class Renderer {
    * them.
    */
   quotaBar (ctx, P, run) {
-    if (!run) return
+    // No wall in the sandbox — a full bar over a quota of zero would be the
+    // renderer asserting a fact the run does not hold.
+    if (!run || run.sandbox) return
     const x0 = this.X(0.014), x1 = this.X(BOARD.w - 0.014)
     const y = this.Y(0.006)
     const p = run.progress
@@ -806,9 +817,24 @@ export class Renderer {
     for (const b of m.world.balls) {
       const x = this.X(b.x), y = this.Y(b.y)
       const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r)
-      g.addColorStop(0, '#fff')
-      g.addColorStop(0.55, P.ball)
-      g.addColorStop(1, `hsla(0 0% 28% / 1)`)
+      if (b.gold) {
+        // A gold ball IS information — it will split at its first nail — but
+        // information survives varnish 0 as LUMINANCE in this codebase (the
+        // payout numbers go grey ink, the chrome ball is documented as
+        // luminance-borne), never as smuggled hue. The first draft kept 55%
+        // saturation at varnish 0 and put one gold ball on the grey
+        // engineering drawing (review finding); now the hue is lacquer and
+        // the stops' darker profile — 92/60/30 against silver's white/72/28 —
+        // is what says "this one is different" when the colour is gone.
+        const s = 0.95 * P.varnish
+        g.addColorStop(0, hsl(48, s, 0.92))
+        g.addColorStop(0.55, hsl(44, s, 0.60))
+        g.addColorStop(1, hsl(38, s, 0.30))
+      } else {
+        g.addColorStop(0, '#fff')
+        g.addColorStop(0.55, P.ball)
+        g.addColorStop(1, `hsla(0 0% 28% / 1)`)
+      }
       ctx.fillStyle = g
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill()
       // A spin tick, so the ball's rotation is visible. It is real state.

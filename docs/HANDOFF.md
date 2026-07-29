@@ -679,6 +679,50 @@ Builder 2's section above, and the argument in `CUE_FAMILY` itself). `floorClear
 `jackpot(0.6)` to a koatari — it is the door closing behind you, not the news; the news already
 played.
 
+## Four rulings, later still (same day — the operator was on a roll)
+
+Full detail in SCIENCE.md §"Four rulings, one afternoon"; what belongs HERE is the traps:
+
+- **Floor 1 is an on-ramp** (FLOOR1_EASE, one part, no surplus, no printed price). The trap the
+  instrument caught: a surplus price printed on a floor that sells nothing sent the auto-player
+  chasing a phantom and dropped floor 2's clear from 95% to 77%. If you add a lockout, lock out
+  its ADVERTISEMENT too.
+- **Free play is a sandbox run** (score = wallet, THE SHOP on the back-room screen, the floor
+  bar as its door). Two screens now each have TWO TENANTS — syncBackroom/syncShop and the
+  fbBank three-way branch both restore their own signage; if you add a third tenant, keep that
+  contract or a shop visit leaves its labels behind. `Machine#refit` is the load-bearing new
+  thing: a floor transition is a NEW machine, a purchase is NOT — refit keeps the ledger and
+  the lottery and refuses during a party. The ledger has a FOURTH line (`bought`), because a
+  purchase is neither won nor conjured, and it must never ride `pay()` or the reward cues would
+  fire on a shop click.
+- **The lottery's lesser verdicts** (straights score 250 via a machine 'sequence' event; total
+  misses pay min(digits) via `pay(x,'hazure')`). The consolation is an economy change:
+  RTP +~3 points on every spec, re-measured, still legal. The straight deliberately has NO
+  synth voice — the taxonomy has no honest drawer for an RNG display event that pays score,
+  and a borrowed drawer is how the cue log rots.
+- **The gold ball** (rare, splits at first nail, OVERPOWERED BY RULING — do not file it down,
+  the operator wants it absurd). World-physics pattern worth keeping: split spawns are DEFERRED
+  to the end of the substep (`world._splits`), because a new body must never enter a contact
+  loop that is mid-iteration. Gold is information and survives varnish 0 muted.
+
+**The second review round (same day) confirmed thirteen distinct defects in the four rulings,
+all fixed before ship.** The ones a future builder should know as LAWS now: a foul refund is
+owed only to a ball that never entered play (`Machine#_enteredPlay` — split twins are marked at
+birth; phantom refunds measured at 15/1,500 launches before the guard); a PAYING display may
+not run on a counter schedule (the reels now draw one display seed per spin — the old no-RNG
+hash was fine while the display decided nothing and indefensible once it paid); the shop shelf
+KEEPS between visits and only buying re-deals (door-toggling was a free reroll that nullified
+the gold ball's rarity); the keystone identity in a sandbox reads `base + fromChain === score +
+spent` (spending moves score aside, provenance records what was EARNED); the consolation pays
+the run's CLOCK — the one payout that does, kin to the foul refund, because it consoles a
+wasted launch (without it a run printed '+3' and confiscated the balls next tick); a paid miss
+suppresses the sour lose tone and the bare-loss dopamine push (else the mechanism-family 'lose'
+voice carried Δp ≈ 0.5 with payouts); and gold at varnish 0 is carried by LUMINANCE, not
+smuggled hue. Also caught: my own FLOOR1_EASE measurement comment did not reproduce because the
+verdict scoring landed after it was measured — the numbers in run.js and SCIENCE.md are from
+the FINAL post-everything sweep, and the lesson is that a measurement comment is stale the
+moment any economy change lands behind it.
+
 **And the tanuki (operator art, same day).** Four images in `images/` (originals + in-browser
 keyed cutouts; the processing story is in the commit). Title plate, back-room poster (福 — the
 dealer), cabinet-hall cutout, and the standing one twice: over the run-over score, and on the

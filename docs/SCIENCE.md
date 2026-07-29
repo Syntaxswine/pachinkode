@@ -625,6 +625,65 @@ moment PUSH ON existed — a player who pushes spends the whole tray by definiti
 measured the policy rather than the difficulty. The run now freezes `launchedAtQuota` at the
 moment the quota falls, and the tool reports that instead.
 
+### Four rulings, one afternoon (2026-07-28, all operator requests, all DESIGN)
+
+**Floor 1 is an on-ramp.** `FLOOR1_EASE = 0.50` on floor 1 alone (the base times the growth IS
+floors 2+, so the crunch cannot move), and floor 1 pays exactly one part — `surplusPicks` and
+`nextPickAt` are locked out there, because an eased quota is trivially doubled and the tutorial
+must not become the cheapest part vendor in the game. Measured on the FINAL sweep (all four
+rulings and every review fix landed): floor 1 clears 100% on 99% of the tray — nobody dies on
+the ramp; the consolation stretching the clock is why the climb still takes most of a tray —
+with the crunch on floors 2–5 (96–100% clear at 100–160% cost) and the crossover at 6; 22 of 24
+runs won. An intermediate measurement (92%/56%) was true when taken and stopped reproducing
+when the lesser verdicts landed the same afternoon — see the stale-measurement note on
+FLOOR1_EASE itself. The lockout's price guard was found by the instrument: with a surplus price
+still printed on floor 1, the auto-player pushed for a part that could never arrive, carried
+less, and floor 2's clear rate fell by eighteen points — one `return null` restored it.
+
+**Free play's score is a wallet.** The sandbox Run observes exactly as a real one does but has
+no wall and no clock; its score buys parts and ball bundles at THE SHOP. Prices are not
+invented: a part costs `QUOTA_BASE × QUOTA_GROWTH^owned` — the shop's price curve is the
+difficulty curve wearing a till — and 100 balls cost 4,000 against a measured ~3,000 that a
+stock board earns per hundred launches, a house margin that parts erode and eventually invert
+on purpose. The machine's ledger grew a fourth line (`bought`) because purchased balls are
+honestly neither `won` (no pocket paid them; hooking them to `pay` would fire reward cues on a
+shop click) nor `conjured` (they were not free). `Machine#refit` swaps brass mid-session while
+KEEPING the ledger and the lottery — a floor transition is a new machine, a purchase is not —
+and refuses during a party, because a refit that could eat a kakuhen would be the shop stealing.
+
+**The lottery's lesser verdicts.** Straights (順目 — three consecutive digits, either direction,
+wrapping mod 8) score 250: the operator's band, above a bucket and below the small win, origin
+`lottery` in the provenance ledger because three digits you never touched came out in a row. And
+a TOTAL miss — no win, no reach, all three digits distinct — pays the LOWEST of the three digits
+in balls, through `pay()` like any real payout, so the reward wash and the tray cascade hear it
+without a single new hook (the ledger rule working as designed). A zero on the display pays
+nothing. In a RUN the consolation pays the CLOCK — the one payout that does, because it consoles
+a wasted launch, which makes it kin to the foul refund rather than to a pocket (a review caught
+the first version printing '+3' and confiscating the balls a tick later).
+
+Two honesty notes on its economy. By arithmetic the consolation is worth roughly +3 RTP points
+(≈half of losing spins pay, E[min digit | paying] ≈ 2, ≈180 spins per 6,000 balls). By
+MEASUREMENT that shift is below the calibration instrument's resolution: at a deep 16-seed
+sweep the means read amadeji 75.4% ± 34.8, standard 59.0% ± 39.2, loose 85.3% ± 21.2 (per-seed
+SD — kakuhen chains own the tail), so consecutive 4-seed snapshots have swung from 127% to 62%
+on amadeji with no code change that could move the mean. An earlier draft of this paragraph
+cited exactly such a snapshot pair as "measured +3 points", which was false precision, the
+thing this file exists to not do; a +3 shift needs ≈ n=500 seeds to resolve at these SDs and
+nobody should burn that to confirm arithmetic. What the instrument CAN say: every spec stays
+inside the 1-hour type-test band (33.3–220%) at the deep sweep. Its effect on the RUN is real
+and visible in the right instrument: consolations stretch every floor's clock (a built-in
+fractional BALL RETURN), which is most of why the curve below runs longer and kinder than the
+pre-verdict one.
+
+**The gold ball.** A rare part (weight 4 against the catalogue's 12–18, max 1): every launch
+leaves gold and SPLITS at its first nail into two silver balls parting in opposite directions.
+OVERPOWERED BY RULING — the operator asked for it that way, and no balance pass will file it
+down. The physics is deterministic (no RNG in the split), the twin spawns at the end of the
+substep so a new body never enters a contact loop mid-iteration, and the slight parent overlap
+is deliberate — the first ball-ball contact supplies the parting pop. Gold survives the warp
+(no nail has been met); gold is INFORMATION and survives varnish 0 muted, like the payout
+numbers, because a ball that will split is a fact about the future, not a celebration.
+
 ### The clock is launches, not the tray
 
 A pachinko tray refills constantly out of the machine's own pockets. An early build read the

@@ -18,7 +18,7 @@ test('every voice the synth can produce declares a cue family', () => {
   s.heso(1); s.tulip(1); s.koatari(1); s.kakuhen(0.65, 1); s.jackpot(0.5, 1)
   s.cascade(9, 1); s.jackpotBuild(2.6, 0.5, 1); s.launch(0.5, 0, 1); s.ratchet(0.5, 1)
   s.foul(1); s.gate(true, 1); s.spinTick(1); s.lose(false, 0); s.reach(1)
-  s.shepard(8, 1); s.quota(1); s.descend(1); s.click(); s.select()
+  s.shepard(8, 1); s.quota(1); s.descend(1); s.split(1); s.click(); s.select()
 
   // 'milestone' joined the taxonomy with the quota fanfare: a voice about the
   // RUN's printed scoreboard rather than the machine's ledger, added because

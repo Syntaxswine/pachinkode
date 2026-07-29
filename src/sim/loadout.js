@@ -201,6 +201,7 @@ export function baseLoadout () {
     ballRefund: 0,
     ballBonus: 0,
     quotaRelief: 0,
+    goldBalls: false,   // GOLD BALLS — every launch splits at its first nail
 
     // bookkeeping — which parts produced this loadout
     parts: []
@@ -394,6 +395,21 @@ export const PARTS = [
       'deliberately so.',
     apply (L) { L.ballRefund = Math.min(1, L.ballRefund + 0.25) },
     available: (L) => L.ballRefund < 1 - 1e-9
+  },
+  {
+    id: 'goldball',
+    name: 'GOLD BALLS',
+    jp: '金玉',
+    kind: 'ball',
+    weight: 4,
+    max: 1,
+    blurb: 'Every ball leaves the launcher gold — and splits in two at its first nail.',
+    detail: 'The tanuki\'s own blessing, and the rarest thing in the catalogue. A gold ball ' +
+      'strikes brass once and becomes two silver balls parting in opposite directions: twice ' +
+      'the board alive per launch, for free, forever. This part is OVERPOWERED BY RULING — the ' +
+      'operator asked for it that way, and no balance pass will ever file it down. The 裏物 ' +
+      'has a ROM nobody inspected; this machine has a launcher that mints steel.',
+    apply (L) { L.goldBalls = true }
   },
   {
     id: 'relief',

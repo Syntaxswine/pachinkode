@@ -213,11 +213,13 @@ export class Machine {
     //   spent    — tokens converted into balls
     //   won      — tokens paid back out of pockets
     //   conjured — tokens that appeared because the player asked for more
-    // Real parlours show you only a ball counter. Showing all three is the point.
+    //   bought   — tokens purchased with SCORE, the sandbox's own currency
+    // Real parlours show you only a ball counter. Showing all four is the point.
     this.tokens = tokens
     this.spent = 0
     this.won = 0
     this.conjured = tokens
+    this.bought = 0
     this.launched = 0
 
     // Lottery state.
@@ -305,15 +307,20 @@ export class Machine {
   get nextJitter () { return JITTER_COLD + (JITTER_HOT - JITTER_COLD) * this.worked }
 
   /**
-   * The three symbols the display will settle on, derived from the spin index
-   * and the already-decided outcome.
+   * The three symbols the display will settle on, derived from the spin's own
+   * DISPLAY SEED and the already-decided outcome.
    *
-   * Deliberately consumes no RNG: the reels are a *readout* of a verdict that
-   * was reached the instant the ball entered the pocket, not a second lottery.
-   * That is exactly how a real machine works, and it is the fact the whole game
-   * is pointing at — by the time you are watching the reels, nothing is left to
-   * decide. Drawing from the RNG here would also shift the outcome stream and
-   * break replay determinism.
+   * The reels are still a *readout* of a verdict reached the instant the ball
+   * entered the pocket — that fact is the whole game. But the symbols hash
+   * from ONE RNG draw made when the spin began, not from the session spin
+   * counter: they used to be a pure counter hash, which was fine while the
+   * display decided nothing and became indefensible the moment the lesser
+   * verdicts made it PAY (straights score, total misses console). A paying
+   * display on a counter schedule is seed-independent, identical in every
+   * session, and precomputable from the HUD's own spin counter — a lottery
+   * in name only (review finding, verified algebraically). One draw per spin
+   * shifts the outcome stream against older builds; that is a baseline move,
+   * made on purpose, and the curve and RTP were re-measured after it.
    */
   spinSymbols () {
     if (!this.spin) return null
@@ -321,7 +328,7 @@ export class Machine {
     // result, and a negative modulo 8 is negative. Without it the reels display
     // symbols like "-1" and "-4".
     const h = (n) => { let x = Math.imul(n, 2654435761) >>> 0; x = (x ^ (x >>> 15)) >>> 0; return x }
-    const i = this.spins + 1
+    const i = this.spin.ds
     const a = h(i * 3) % 8
     if (this.spin.outcome) return [a, a, a]
     // Koatari settles as an outer pair with the middle far off — visually a
@@ -336,6 +343,41 @@ export class Machine {
   get rtp () { return this.spent > 0 ? this.won / this.spent : 0 }
 
   addTokens (n) { this.tokens += n; this.conjured += n; this.emit('conjure', { n }) }
+
+  /**
+   * Tokens bought with score — the sandbox shop's trade. A third ledger line,
+   * because these are honestly neither of the other two: not `won` (no pocket
+   * paid them — hooking them to 'pay' would fire the reward cues on a shop
+   * click, a false positive the cue laws forbid) and not `conjured` (they were
+   * not free; the player traded a number they earned). The event is its own
+   * kind so nothing downstream can confuse a purchase with a payout.
+   */
+  buyTokens (n) { this.tokens += n; this.bought += n; this.emit('purchase', { n }) }
+
+  /**
+   * New brass, same session — the sandbox shop's fitting.
+   *
+   * A run rebuilds the whole Machine between floors, and that is correct
+   * there: a floor is a fresh machine. A mid-session purchase is not. It must
+   * keep the LEDGER (spent/won/conjured/bought — the exhibit's honesty is a
+   * running total) and the LOTTERY (holds, kakuhen, the counters) while the
+   * board becomes a function of the new loadout. Balls in flight go with the
+   * old world — the fitter clears the field — and it refuses during a party:
+   * nobody swaps brass with the attacker open, and a refit that could eat a
+   * jackpot would be the shop stealing.
+   */
+  refit (loadout) {
+    if (this.inJackpot || this.koatari) return false
+    this.loadout = loadout
+    const built = buildBoard(loadout)
+    this.world = built.world
+    this.parts = built.parts
+    this.foulHeat = 0
+    this.pending = null
+    this.charging = false
+    this.power = this.dial
+    return true
+  }
 
   /**
    * Dial → muzzle velocity.
@@ -414,7 +456,11 @@ export class Machine {
         const lp = launchPoint()
         const s = this.speedFor(p) * (1 + this.rng.normal(0, jitter))
         this.lastSpeed = s
-        w.spawn(makeBall(lp.x, lp.y, lp.dx * s, lp.dy * s, { dial: p }))
+        // With GOLD BALLS fitted every launch leaves gold — it will split at
+        // its first nail (world.js). The flag is loadout state, so the part
+        // works through the same door as every other part.
+        w.spawn(makeBall(lp.x, lp.y, lp.dx * s, lp.dy * s,
+          { dial: p, gold: !!this.loadout.goldBalls }))
         this.emit('launch', { speed: s, dial: this.dial, power: p, jitter, worked })
       } else {
         this.firing = false
@@ -431,6 +477,7 @@ export class Machine {
     // --- pockets ----------------------------------------------------------
     for (const ev of w.drainEvents()) {
       if (ev.type === 'hit') { this.emit('hit', ev); continue }
+      if (ev.type === 'split') { this.emit('split', ev); continue }
       if (ev.type !== 'sensor') continue
       this.onPocket(ev)
     }
@@ -448,7 +495,10 @@ export class Machine {
         const st = this.parts.stage
         const x = st.x + this.rng.range(-st.halfWidth, st.halfWidth)
         const vx = this.rng.range(-0.10, 0.10)
-        const out = this.world.spawn(makeBall(x, st.y, vx, 0.05, { warped: true }))
+        // Gold survives the warp: the ball has not met a nail yet, and the
+        // stage releases it above the densest nails on the board.
+        const out = this.world.spawn(makeBall(x, st.y, vx, 0.05,
+          { warped: true, gold: !!ev.ball.gold }))
         // `from` lets the value model carry the ball's history across the warp.
         // It is the same ball: the trip that found the warp is part of what made
         // it valuable, and dropping the history here both loses that credit and
@@ -508,7 +558,18 @@ export class Machine {
         }
         break
       case 'foul':
-        // A shot too weak to crest never entered play. Real machines refund it.
+        // A shot too weak to crest never entered play. Real machines refund
+        // it — but ONLY a ball that never played is owed one. A split twin
+        // was born in play (its launch is still on the field as its sibling),
+        // and a post-split parent has struck brass; refunding either pays one
+        // launch twice while half of it keeps scoring. Measured before this
+        // guard: 15 phantom refunds per 1,500 launches under GOLD BALLS at a
+        // weak dial (review finding). A played ball that finds the channel is
+        // simply a drain — it entered, it lost.
+        if (this._enteredPlay(ev.ball)) {
+          this.emit('drain', { x: ev.x, y: ev.y, kind: 'returned', ball: ev.ball })
+          break
+        }
         this.tokens++
         this.spent--
         this.foulHeat += 1
@@ -533,7 +594,7 @@ export class Machine {
         // the field side of the wall, where it could refund a legitimately
         // spent field ball — slack that protected an empty set (review find).
         const inChannel = d > R.r - R.gap && a > BOARD.railStart - 12 && a < BOARD.railInnerEnd + 5
-        if (inChannel) {
+        if (inChannel && !this._enteredPlay(ev.ball)) {
           this.tokens++
           this.spent--
           this.foulHeat += 1
@@ -546,10 +607,53 @@ export class Machine {
     }
   }
 
+  /**
+   * Did this ball actually play? A foul refund is owed only to one that never
+   * did. Legitimate fouls always have hits === 0 — the launch channel holds
+   * no nails — and a split twin was BORN in play, marked at spawn.
+   */
+  _enteredPlay (b) { return !!b && (b.hits > 0 || !!b.split) }
+
   pay (n, source) {
     this.tokens += n
     this.won += n
     this.emit('pay', { n, source })
+  }
+
+  /**
+   * What a losing display is still worth (operator's rulings, 2026-07-28).
+   *
+   * STRAIGHTS (順目): three consecutive digits, rising or falling, wrapping
+   * mod 8. The machine only ANNOUNCES the pattern — worth lives in run.js
+   * with the rest of the scoreboard, because a straight pays SCORE, not
+   * balls, and the machine's ledger must not know the scoreboard exists.
+   * A reach can never be a straight (its outer pair is equal), so the two
+   * verdicts cannot collide.
+   *
+   * THE CONSOLATION: a TOTAL miss — no win, no small win, no reach, all
+   * three digits distinct — pays the LOWEST of the three digits in balls.
+   * It rides pay(), so the ledger, the reward wash and the tray cascade all
+   * hear it as exactly what it is: a real payout, usually tiny. A zero on
+   * the display pays nothing, which keeps ハズレ a word that can still mean
+   * miss. This is an economy change and was re-measured — see SCIENCE.md.
+   */
+  resolveMiss (syms, reach) {
+    const [a, b, c] = syms
+    const up = (b - a + 8) % 8 === 1 && (c - b + 8) % 8 === 1
+    const down = (a - b + 8) % 8 === 1 && (b - c + 8) % 8 === 1
+    if (up || down) {
+      this.lastResolve.seq = true
+      this.emit('sequence', { syms: [...syms], dir: up ? 'up' : 'down' })
+    }
+    if (!reach && a !== b && b !== c && a !== c) {
+      const x = Math.min(a, b, c)
+      if (x > 0) {
+        this.lastResolve.paid = x
+        this.pay(x, 'hazure')
+        return x
+      }
+    }
+    return 0
   }
 
   // --- the lottery ---------------------------------------------------------
@@ -581,7 +685,16 @@ export class Machine {
         this.lastResolve = { kind: outcome ? 'win' : ko ? 'ko' : 'lose', reach, at: this.time }
         if (outcome) this.startJackpot()
         else if (ko) this.startKoatari()
-        else this.emit('spinLose', { reach })
+        else {
+          // The consolation resolves FIRST so the loss event can say whether
+          // it paid — the shell needs that to keep the 'lose' voice honest:
+          // a mechanism-family cue that co-occurred with a payment on half of
+          // all losses would carry Δp ≈ 0.5 against its declared ≈ 0
+          // (review finding). A paid miss is announced by its cascade; only
+          // a bare miss gets the bare-miss treatment.
+          const paid = this.resolveMiss(this.lastSymbols, reach)
+          this.emit('spinLose', { reach, paid })
+        }
         // The chain dying quietly is an event too — the ST spins ran out with
         // no hit. Without it the thinned Shepard descent under kakuhen would
         // keep falling long after the chain it was falling for was gone.
@@ -610,7 +723,10 @@ export class Machine {
         dur: SPIN_TIME + (reach ? REACH_EXTRA : 0),
         outcome: win,
         reach,
-        ko
+        ko,
+        // The display seed — drawn here, with everything else, the instant
+        // the spin begins. See spinSymbols for why the reels earn a draw now.
+        ds: (this.rng() * 4294967296) >>> 0
       }
       this.emit('spinStart', { odds, reach, holds: this.holds, kakuhen: this.kakuhen > 0 })
     }

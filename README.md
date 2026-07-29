@@ -31,11 +31,13 @@ Every run this browser has seen is kept locally: the best one on the title scree
 full under **RECORDS**, with per-cabinet bests kept apart. No account, no server, nothing leaves
 the machine.
 
-Floor 1 is a knife fight — measured, about two runs in three survive it, and it eats most of the
-tray. Floor 12 costs a couple of per cent, because by then the parts have compounded past the
-wall and the machine is coming apart in your favour. Clearing twelve **banks the win** and the
-floors keep coming: OVERTIME has no ceiling, and a run that keeps pushing on ends up scoring in
-the billions before the wall finally catches it.
+Floor 1 is an on-ramp — measured, nine runs in ten clear it on about half the tray, and it pays
+exactly one part, never more. The knife fight is floors 2 and 3, which cost more than a full
+tray each and arrive right after you have taken one part and think you understand the machine.
+Floor 12 costs a couple of per cent, because by then the parts have compounded past the wall and
+the machine is coming apart in your favour. Clearing twelve **banks the win** and the floors
+keep coming: OVERTIME has no ceiling, and a run that keeps pushing on ends up scoring in the
+billions before the wall finally catches it.
 
 Six cabinets unlock as you go, and every one is a real class of Japanese machine: 街台, 一発台,
 羽根物, 権利物, デジパチ, and finally 裏物 — the back-room machines with unauthorised ROMs, fitted

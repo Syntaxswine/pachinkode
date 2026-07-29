@@ -358,15 +358,16 @@ if (flag('curve')) {
   }
   console.log(`  crossover floor: ${crossover ?? 'never'}` +
     `   (target 4–8: earlier is a pushover, later is a wall)`)
-  // The target band here started at 35–55% and that was wrong, which the tool
-  // itself is what proved. Floor clear rates COMPOUND: a run that clears each
-  // of its first four floors half the time reaches floor 5 six per cent of the
-  // time, so a 45% first floor does not produce a hard game, it produces a
-  // game nobody sees past the second screen. The difficulty of the early
-  // floors has to live in the MARGIN — floor 1 costs 90%+ of the tray to
-  // clear — not in the failure rate.
+  // This band has moved twice, each time by a ruling the tool then enforced.
+  // It started at 35–55%, which the tool itself proved wrong: clear rates
+  // COMPOUND (four floors at 50% = 6% see floor 5), so early difficulty must
+  // live in the MARGIN, not the failure rate — that gave 60–75%. Then the
+  // operator ruled floor 1 an ON-RAMP (FLOOR1_EASE in run.js, 2026-07-28):
+  // easy to finish, worth exactly one part, with the filter moved to floor 2.
+  // A target band must encode the CURRENT ruling or the instrument cries wolf
+  // at a number the design chose on purpose.
   console.log(`  floor-1 clear rate: ${pct((cleared[1] || 0) / (reached[1] || 1))}` +
-    `   (target 60–75%: the early floors hurt in COST, not in deaths)\n`)
+    `   (target ≥85%: the on-ramp — the filter is floor 2, the crunch 2–3)\n`)
   process.exit(0)
 }
 

@@ -107,6 +107,7 @@ export class World {
     this.time = 0
     this.acc = 0
     this.events = []              // drained by machine.js each frame
+    this._splits = []             // gold-ball twins, spawned at substep end
     this._grid = null
     this._segGrid = null
     this._dynSegs = []
@@ -210,6 +211,14 @@ export class World {
     }
     this._collideBalls()
 
+    // Gold-ball twins join the world only now, contacts done — they are
+    // resolved as ordinary balls from the next substep on, spawned clear of
+    // their parent so the first thing they do is fly, not teleport.
+    if (this._splits.length) {
+      for (const t of this._splits) this.balls.push(t)
+      this._splits.length = 0
+    }
+
     // Sensors last, so a ball that was just pushed out of a wall is judged in
     // its resolved position.
     for (const b of this.balls) {
@@ -294,6 +303,30 @@ export class World {
         b.hits++
         b.lastHitAge = 0
         this.emit('hit', { ball: b, x: b.x, y: b.y, speed, surface: 'nail', nail: n })
+        // The gold ball's one trick: its FIRST nail splits it (see the part
+        // in loadout.js — overpowered by the operator's ruling, on purpose).
+        // The twin leaves clear of its parent with the horizontal mirrored,
+        // so the pair part ways under their own velocities — an earlier
+        // draft spawned them overlapping and claimed the ball-ball contact
+        // would supply a parting pop; a review proved the mirrored pair is
+        // strictly separating, so that contact NEVER fires and the overlap
+        // only bought a silent position snap. The flag drops before anything
+        // else so a ball kissing two nails in one substep splits once, the
+        // spawn is DEFERRED to the end of the substep so a new body never
+        // enters a contact loop mid-flight, and the twin is MARKED — it was
+        // born in play, and the foul path must never refund it.
+        if (b.gold) {
+          b.gold = false
+          const dir = b.vx >= 0 ? 1 : -1
+          // A dead-vertical strike has no sideways to mirror; the split
+          // itself supplies the parting shove.
+          if (Math.abs(b.vx) < 0.15) b.vx = dir * 0.35
+          const twin = makeBall(b.x - dir * (b.r * 2 + 0.0003), b.y, -b.vx, b.vy,
+            { split: true })
+          twin.w = -b.w
+          this._splits.push(twin)
+          this.emit('split', { x: b.x, y: b.y, ball: b, twin })
+        }
       }
     }
   }

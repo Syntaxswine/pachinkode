@@ -50,23 +50,26 @@
 //
 //     node tools/run-sim.js --curve
 //
-// prints all of it. Measured at the current constants (24 runs per policy,
-// 2026-07-28, after the decision went live — see meetQuota below):
+// prints all of it. Measured at the current constants (24 runs, thrifty,
+// 2026-07-28 FINAL — after the live door, the on-ramp, the lesser verdicts
+// with their display seed, and every review fix; earlier tables in this
+// file's history were each true of a machine that no longer exists):
 //
-//     floor  1   76% of the tray to meet the quota,  79% of runs clear it
-//     floor  2  124%   ← the real wall, and it is not floor 1
-//     floor  3  119%
-//     floor  4   75%
-//     floor  5   93%
-//     floor  6   37%   ← crossover
-//     floor  7   15%
-//     floor 12    1%
+//     floor  1   99% of the tray to meet the quota, 100% of runs clear it
+//     floor  2  131%,  96% clear   ← the wall starts here
+//     floor  3  100%, 100%
+//     floor  4  154%,  96%
+//     floor  5  160%, 100%
+//     floor  6   36%   ← crossover
+//     floor  7   38%
+//     floor 12    1%          22/24 runs won
 //
-// Floors 2–3 costing MORE than a full tray is not a bug: BALL RETURN refunds
-// stretch the allowance, so a floor can spend twice what it started with. The
-// shape worth noticing is that floor 1 is a FILTER and floors 2–3 are the
-// CRUNCH — the run's hardest moment arrives after the player has had one part
-// and thinks they understand it.
+// Floors costing MORE than a full printed tray is not a bug: BALL RETURN
+// refunds and the hazure CONSOLATION (which pays the clock — see observe)
+// both stretch the allowance, so a floor can spend half again what it
+// started with. The shape: floor 1 is an ON-RAMP that nobody dies on but
+// most of a tray is spent climbing, floors 2–5 are the CRUNCH, and the
+// crossover at 6 is where the parts out-run the wall.
 //
 // If a retune pushes the crossover past floor 9 the run has become a wall;
 // below floor 4 the early game has stopped being hard. Both are regressions
@@ -115,7 +118,10 @@ export const SCORE = {
   attacker: 60,
   koatari: 400,
   jackpot: 1500,
-  warp: 15          // the shortcut itself is worth something, quietly
+  warp: 15,         // the shortcut itself is worth something, quietly
+  sequence: 250     // 順目 — a straight on the reels; operator's band: above a
+                    // bucket, below the small win. Pure lottery: you watched
+                    // three digits you never touched come out in a row.
 }
 
 /** Chain multiplier at a given chain length. */
@@ -158,7 +164,11 @@ export function chainMult (chain, L) {
 // tracks it separately: of the points you scored, how many existed only because
 // you were holding a chain together.
 //
-// base + fromChain === score, exactly, and a test pins that.
+// base + fromChain === score, exactly, and a test pins that. (In the SANDBOX,
+// where score is a wallet and can be spent, the identity reads
+// base + fromChain === score + spent — spending moves score to `spent`
+// one-for-one and never touches this ledger, which records what was EARNED.
+// A second test pins the amended form.)
 //
 // ── what it is FOR ──────────────────────────────────────────────────────────
 //
@@ -211,7 +221,8 @@ export const SCORE_ORIGIN = {
   warp: 'aimed',
   attacker: 'lottery',
   koatari: 'lottery',
-  jackpot: 'lottery'
+  jackpot: 'lottery',
+  sequence: 'lottery'
 }
 
 /** A fresh provenance ledger. */
@@ -233,9 +244,26 @@ export const QUOTA_GROWTH = 1.30
 export const BALLS_BASE = 160
 export const FLOORS = 12          // survive twelve and the run is CLEARED
 
+// The first floor is an ON-RAMP (operator's ruling): easy to finish, and
+// worth exactly one part — see surplusPicks. The ease is a named factor on
+// floor 1 alone rather than a lower base, because the base times the growth
+// IS floors 2+ and the crunch there must not move. Measured at 0.50, FINAL
+// sweep (24 runs, stock, all 2026-07-28 changes landed): floor 1 clears
+// 100% on 99% of the tray — nobody dies on the ramp, and the consolation
+// stretching the clock is why the climb takes most of a tray — with the
+// crunch on floors 2–5 and the crossover holding at 6. This comment has
+// been wrong twice: first as a prediction written before the instrument ran
+// (96%/38%), then as a TRUE measurement (92%/56%) that stopped reproducing
+// when the lesser verdicts landed behind it the same afternoon. A
+// measurement comment is stale the moment any economy change lands after
+// it; re-run the tool before trusting this line, and especially before
+// editing it.
+export const FLOOR1_EASE = 0.50
+
 /** The quota for a floor (1-indexed), after any relief the loadout carries. */
 export function quotaFor (floor, L, difficulty = 1) {
-  const raw = QUOTA_BASE * Math.pow(QUOTA_GROWTH, floor - 1) * difficulty
+  const ease = floor === 1 ? FLOOR1_EASE : 1
+  const raw = QUOTA_BASE * Math.pow(QUOTA_GROWTH, floor - 1) * difficulty * ease
   return Math.round(raw * (1 - (L ? L.quotaRelief : 0)))
 }
 
@@ -276,6 +304,14 @@ export function picksFor (floor) {
 /** Ceiling on parts bought with surplus score, on top of `picksFor`. */
 export const MAX_SURPLUS_PICKS = 3
 
+/** The sandbox shop's shelf prices — see the shop section in Run. */
+export const SHOP = { ballBundle: 100, ballPrice: 4000 }
+
+/** The sandbox cabinet: FREE PLAY's run, all scoreboard and no wall. */
+export function sandboxCabinet (spec) {
+  return { key: 'free', label: 'FREE PLAY', jp: '遊技', spec, difficulty: 1, parts: [], sandbox: true }
+}
+
 export class Run {
   /**
    * @param cabinet  a cabinet definition from cabinets.js
@@ -287,11 +323,19 @@ export class Run {
     this.rng = makeRng(seed ^ 0x9e3779b9)
     this.loadout = resolveLoadout(cabinet.parts || [])
 
+    // SANDBOX (FREE PLAY): same scoreboard, no wall and no clock. The score
+    // becomes a WALLET — see the shop section below — which is the operator's
+    // ruling for what free play's number should be for. No quota, no floors,
+    // no fail state; the machine keeps its own token balance and the T-key
+    // conjure stays, because the exhibit's frictionlessness is the exhibit.
+    this.sandbox = !!cabinet.sandbox
+
     this.floor = 1
     this.score = 0
-    this.quota = quotaFor(1, this.loadout, cabinet.difficulty || 1)
+    this.quota = this.sandbox ? 0 : quotaFor(1, this.loadout, cabinet.difficulty || 1)
     this.ballsLeft = ballsFor(1, this.loadout)
     this.ballsAtStart = this.ballsLeft
+    this.spent = 0              // sandbox: score traded away at the shop
 
     // The chain. `chain` counts scoring events inside the window of the last
     // one; `chainT` is how long since the last. A chain is the only number in
@@ -362,8 +406,10 @@ export class Run {
     this.emit('score', { n, kind, site, x, y, chain: this.chain, mult: this.mult, total: this.floorScore })
     // Meeting the quota does not end the floor, and does not even pause it —
     // see meetQuota(). It fires only the first time; the score keeps climbing
-    // afterwards for as long as the player keeps feeding the launcher.
-    if (this.floorScore >= this.quota && !this.metQuota) this.meetQuota()
+    // afterwards for as long as the player keeps feeding the launcher. A
+    // sandbox has no quota to meet (and quota 0 would "meet" on the first
+    // point, which is why the guard is on the flag, not the number).
+    if (!this.sandbox && this.floorScore >= this.quota && !this.metQuota) this.meetQuota()
     return n
   }
 
@@ -434,6 +480,12 @@ export class Run {
   }
 
   surplusPicks () {
+    // Floor 1 pays exactly its base pick, never more (operator's ruling, with
+    // FLOOR1_EASE above). An eased quota is trivially doubled, so without
+    // this lockout the on-ramp would quietly become the cheapest part vendor
+    // in the game and the optimal opening would be grinding the tutorial.
+    // The first REAL decision arrives on floor 2, once a part means something.
+    if (this.floor === 1) return 0
     if (this.quota <= 0) return 0
     const ratio = this.floorScore / this.quota
     if (ratio < 2) return 0
@@ -442,6 +494,11 @@ export class Run {
 
   /** The score at which one more part is earned — printed, so the bet is legible. */
   nextPickAt () {
+    // No price on floor 1: the lockout above means there is nothing to buy,
+    // and a printed price for a part that can never arrive is a lie the
+    // instrument caught — the auto-player pushed floor 1 chasing it, carried
+    // less, and floor 2's clear rate fell from 95% to 77% before this guard.
+    if (this.floor === 1) return null
     const n = this.surplusPicks()
     if (n >= MAX_SURPLUS_PICKS) return null
     return Math.ceil(this.quota * Math.pow(2, n + 1))
@@ -474,6 +531,79 @@ export class Run {
     if (this.status !== 'playing' || !this.metQuota) return false
     this.banked = Math.min(Math.max(0, this.ballsLeft), BALLS_BASE)
     this.clearFloor()
+    return true
+  }
+
+  // ── THE SHOP (sandbox only) ───────────────────────────────────────────────
+  //
+  // Free play's score is a WALLET (operator's ruling): trade it for parts or
+  // for balls. The prices are not invented numbers —
+  //
+  //   A part costs what the wall grows by: QUOTA_BASE × QUOTA_GROWTH^owned.
+  //   The anchor is QUOTA_BASE itself — the curve's base constant, which is
+  //   floor 2's quota divided by one growth step, NOT floor 1's quota (the
+  //   on-ramp ease halves that; a review caught this prose claiming
+  //   otherwise). Each part raises the next's price by the same ratio the
+  //   wall climbs, so the sandbox's price curve IS the difficulty curve
+  //   wearing a till — anchored where the curve is, not where the tutorial is.
+  //
+  //   Balls come in bundles of 100 at 4,000. Measured, a stock board earns
+  //   ~30 score per ball, so the bundle sells at ~4/3 of what it generates —
+  //   a house margin at stock that parts erode and eventually invert. That
+  //   inversion is deliberate: a built board buying profitable balls is the
+  //   compounding fantasy, and the T key already hands out free tokens, so
+  //   the price protects nothing. It exists to make the trade a trade.
+  //
+  // The Run never touches the Machine (the law): buyBalls() only moves SCORE
+  // and emits — the shell hears 'ballsBought' and calls machine.buyTokens,
+  // which books them on the machine's own honest ledger line.
+
+  get partPrice () {
+    return Math.round(QUOTA_BASE * Math.pow(QUOTA_GROWTH, this.loadout.parts.length))
+  }
+
+  /** Lay out the shop's shelf. Callable any time in the sandbox. */
+  shopDeal () {
+    if (!this.sandbox) return null
+    this.offers = drawOffers(this.loadout, this.rng, 3)
+    return this.offers
+  }
+
+  /**
+   * Spend score. The one place the wallet empties; refuses what it cannot pay.
+   *
+   * ── the keystone's identity, amended ──
+   * Spending moves score to `spent` one-for-one, so in a sandbox the
+   * provenance identities read: sum(bySource) === byOrigin total ===
+   * base + fromChain === score + spent. The unamended `=== score` form the
+   * keystone block states holds in every run mode, where nothing can spend —
+   * a review caught the sandbox silently falsifying the documented exact
+   * identity, and a test now pins the amended one.
+   */
+  spendScore (n) {
+    if (!this.sandbox || n <= 0 || this.score < n) return false
+    this.score -= n
+    this.spent += n
+    return true
+  }
+
+  /** Buy a part off the shelf. Deducts, fits, and re-deals. */
+  buy (partId) {
+    if (!this.sandbox) return false
+    if (!this.offers || !this.offers.some(o => o.id === partId)) return false
+    const price = this.partPrice
+    if (!this.spendScore(price)) return false
+    resolveLoadout([partId], this.loadout)
+    this.emit('fitted', { part: partId, price })
+    this.shopDeal()
+    return true
+  }
+
+  /** Buy a bundle of balls. The shell grants them on the machine's ledger. */
+  buyBalls () {
+    if (!this.sandbox) return false
+    if (!this.spendScore(SHOP.ballPrice)) return false
+    this.emit('ballsBought', { n: SHOP.ballBundle, price: SHOP.ballPrice })
     return true
   }
 
@@ -515,13 +645,27 @@ export class Run {
         case 'warp': this.add(SCORE.warp, 'warp', ev.x, ev.y); break
         case 'koatari': this.add(SCORE.koatari, 'koatari', 0.220, 0.230); break
         case 'jackpot': this.add(SCORE.jackpot, 'jackpot', 0.220, 0.230); break
-        // The clock.
-        case 'launch': this.launched++; this.ballsLeft--; break
-        case 'foul': this.ballsLeft++; break
+        case 'sequence': this.add(SCORE.sequence, 'sequence', 0.220, 0.230); break
+        // The clock. A sandbox has none — the machine owns its own balance
+        // there, and decrementing a clock nobody reads would march ballsLeft
+        // to minus infinity.
+        case 'launch': if (!this.sandbox) { this.launched++; this.ballsLeft-- } break
+        case 'foul': if (!this.sandbox) this.ballsLeft++; break
         case 'pay': {
+          // THE CONSOLATION feeds the clock directly — the ONE payout that
+          // does. The clock's law is: launches spend, fouls refund, payouts
+          // stay in the tray unless BALL RETURN is fitted. The consolation is
+          // kin to the foul refund, not to a pocket payout: it consoles a
+          // WASTED LAUNCH (a total miss), so it pays the launch's own
+          // currency back. Without this, a run printed 'ハズレ +3', played
+          // the cascade, and confiscated the balls on the next tick — a
+          // payout no resource the player owned could receive (review
+          // finding). It breaks before the refund pool so BALL RETURN cannot
+          // double-dip the same pay.
+          if (!this.sandbox && ev.source === 'hazure') { this.ballsLeft += ev.n; break }
           // Fractional, accumulated, and only ever spent in whole balls — a
           // quarter of a launch is not a thing the launcher can do.
-          if (this.loadout.ballRefund > 0) {
+          if (!this.sandbox && this.loadout.ballRefund > 0) {
             this.refundPool += ev.n * this.loadout.ballRefund
             while (this.refundPool >= 1) { this.refundPool--; this.ballsLeft++ }
           }
@@ -545,7 +689,8 @@ export class Run {
     // The floor is over when the tray is empty AND the board has settled. A
     // ball still bouncing can still find a bucket, and ending the floor while
     // one is in the air would be the machine cutting the player off mid-shot.
-    if (this.status === 'playing' && this.ballsLeft <= 0 && inFlight === 0) this.fail()
+    // A sandbox never ends — that is what makes it the exhibit.
+    if (!this.sandbox && this.status === 'playing' && this.ballsLeft <= 0 && inFlight === 0) this.fail()
   }
 
   clearFloor () {

@@ -12,7 +12,7 @@ import { Dopamine } from './sim/dopamine.js'
 import { Renderer } from './render/board-render.js'
 import { Synth } from './audio/synth.js'
 import { Hud } from './ui/hud.js'
-import { Run, FLOORS, quotaFor, BALLS_BASE } from './sim/run.js'
+import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet } from './sim/run.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
 import { PART_BY_ID, countPart } from './sim/loadout.js'
 import { scoreTier } from './render/palette.js'
@@ -78,14 +78,21 @@ let sliderHinted = false
 
 const interval = () => (FIRE_RATES[state.rate] || FIRE_RATES.arcade).interval
 
-/** FREE PLAY: the original exhibit. No quota, no clock, tokens on request. */
+/**
+ * FREE PLAY: the original exhibit — no quota, no clock, tokens on request —
+ * now with a scoreboard that is a WALLET (operator's ruling). The sandbox Run
+ * observes exactly as a real one does; it just has no wall to hit and no
+ * floor to fail. Its score buys parts and balls at the shop, reached through
+ * the same bar a real run banks from.
+ */
 function newSession () {
-  run = null
+  run = new Run(sandboxCabinet(state.spec), (Math.random() * 1e9) | 0)
   machine = new Machine({
     seed: (Math.random() * 1e9) | 0,
     spec: state.spec,
     tokens: state.tokens,
-    fireInterval: interval()
+    fireInterval: interval(),
+    loadout: run.loadout
   })
   dop = new Dopamine(BOARD.w, BOARD.h)
   machine.dial = 0.20
@@ -173,10 +180,11 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-go]')
   if (!b) return
   synth.start().then(() => synth.click())
-  // FREE PLAY from the title tears down any run in progress. Leaving one
+  // FREE PLAY from the title tears down any REAL run in progress. Leaving one
   // half-alive behind the free-play board was how the first build ended up
-  // scoring a quota nobody was playing for.
-  if (b.dataset.mode === 'free' && run) { run = null; newSession() }
+  // scoring a quota nobody was playing for. An existing sandbox is kept —
+  // stepping out to the title and back must not reset the exhibit.
+  if (b.dataset.mode === 'free' && run && !run.sandbox) newSession()
   go(b.dataset.go)
 })
 $('#toTitle').addEventListener('click', () => go('title'))
@@ -196,8 +204,9 @@ function syncMeta () {
   // mistyped key inside the same session is not integrity, it is a bug with a
   // principle stapled to it.
   const btn = $('#resumeRun')
-  btn.style.display = run && run.status !== 'failed' ? '' : 'none'
-  if (run && run.status !== 'failed') {
+  // A sandbox is not a run to resume — FREE PLAY is its own door.
+  btn.style.display = run && !run.sandbox && run.status !== 'failed' ? '' : 'none'
+  if (run && !run.sandbox && run.status !== 'failed') {
     $('#resumeSub').textContent =
       `${run.cabinet.label} · floor ${run.floor} · ${fmt(run.score)} banked · ` +
       `${run.ballsLeft} balls in the tray`
@@ -312,7 +321,11 @@ function syncCabinets () {
 
 let fbCache = ''
 function syncFloorbar () {
-  const on = !!(run && run.status === 'playing' && run.metQuota && state.screen === 'play')
+  // Two tenants, one bar. In a run it is the door out of a met floor; in the
+  // sandbox it is the shop's door, up the whole session — same slot at the
+  // stage's foot, so the player learns one place to look for "spend".
+  const on = !!(run && state.screen === 'play' &&
+    (run.sandbox || (run.status === 'playing' && run.metQuota)))
   const play = $('#play')
   if (play.classList.contains('quota') !== on) {
     play.classList.toggle('quota', on)
@@ -324,6 +337,19 @@ function syncFloorbar () {
   if (!on) { fbCache = ''; return }
 
   const r = run
+  const btn = $('#fbBank')
+  if (r.sandbox) {
+    const key = `sb|${r.score}|${r.partPrice}`
+    if (key === fbCache) return
+    fbCache = key
+    $('#fbHead').textContent = `FREE PLAY · ${fmt(r.score)} SCORE`
+    $('#fbSub').textContent =
+      `the shop takes score — a part is ${fmt(r.partPrice)}, ${SHOP.ballBundle} balls are ${fmt(SHOP.ballPrice)}`
+    btn.firstChild.textContent = 'THE SHOP ▸'
+    $('#fbNote').textContent = 'trade the number for brass or balls'
+    return
+  }
+
   const carry = Math.min(Math.max(0, r.ballsLeft), BALLS_BASE)
   const picks = r.picksEarned()
   const nextAt = r.nextPickAt()
@@ -338,8 +364,9 @@ function syncFloorbar () {
     `${picks} PART${picks === 1 ? '' : 'S'} EARNED`
   $('#fbSub').textContent = nextAt
     ? `push on — ${fmt(nextAt - r.floorScore)} more score buys another part`
-    : 'surplus ceiling reached — every ball from here is score alone'
-  const btn = $('#fbBank')
+    : r.floor === 1
+      ? 'floor one pays one part, no more — the rest of the tray is yours to bank'
+      : 'surplus ceiling reached — every ball from here is score alone'
   btn.firstChild.textContent = `BANK ${carry} ▸ NEXT FLOOR`
   $('#fbNote').textContent =
     `through the back room` +
@@ -347,12 +374,35 @@ function syncFloorbar () {
 }
 
 $('#fbBank').addEventListener('click', () => {
-  // Guarded even though the off-state bar is now visibility-hidden: defence
-  // in depth costs one line, and this handler once dereferenced a null run
-  // when Tab+Enter reached the invisible button in FREE PLAY (review
-  // finding). The charge is cancelled only AFTER the gate agrees — a refused
-  // bank must not cost the player their pull.
-  if (!run || run.status !== 'playing' || !run.metQuota) return
+  // Guarded even though the off-state bar is visibility-hidden: defence in
+  // depth costs one line, and this handler once dereferenced a null run when
+  // Tab+Enter reached the invisible button (review finding). The charge is
+  // cancelled only AFTER a gate agrees — a refused press must not cost the
+  // player their pull.
+  if (!run) return
+  if (run.sandbox) {
+    // The shop. Browsable any time; leaving costs nothing. The one refusal:
+    // a party in progress — the fitter will not swap brass with the attacker
+    // open (Machine#refit would refuse and the loadout would drift ahead of
+    // the board), and shopping through a jackpot is leaving money on it.
+    if (machine.inJackpot || machine.koatari) {
+      banner('THE FITTER WAITS', 'no brass swaps with the attacker open — let the party finish')
+      return
+    }
+    synth.click()
+    machine.cancelCharge()
+    firingHeld = false
+    // The shelf KEEPS between visits — deal only when there has never been
+    // one. An unconditional re-deal here made door-toggling a free unlimited
+    // reroll that nullified the catalogue's draw weights (review finding: a
+    // gold shelf every ~20 toggles), while the leave button promised the
+    // opposite. Buying re-deals, because buying is the paid reroll.
+    if (!run.offers) run.shopDeal()
+    syncShop()
+    go('backroom')
+    return
+  }
+  if (run.status !== 'playing' || !run.metQuota) return
   synth.click()
   // bank() clears the floor, which emits 'draft'; drainRun's handler is what
   // navigates to the back room. Doing it here as well would be two places
@@ -370,6 +420,11 @@ $('#fbBank').addEventListener('click', () => {
 // ── the back room ──────────────────────────────────────────────────────────
 
 function syncBackroom () {
+  // Two tenants share this screen (see syncShop) — restore the run's signage,
+  // or a back room visited after a shop session still reads like the shop.
+  const skip = $('#brSkip')
+  skip.childNodes[0].textContent = 'TAKE NOTHING'
+  skip.querySelector('small').textContent = 'forfeits this floor’s remaining picks'
   $('#brHead').textContent = run.floor > FLOORS
     ? `OVERTIME ${run.floor - FLOORS} CLEARED`
     : `FLOOR ${run.floor} CLEARED`
@@ -409,7 +464,68 @@ function syncBackroom () {
 const nextQuota = () =>
   quotaFor(run.floor + 1, run.loadout, run.cabinet.difficulty || 1)
 
-$('#brSkip').addEventListener('click', () => { synth.click(); run.skip(); afterDraft() })
+// ── the shop (sandbox) ─────────────────────────────────────────────────────
+//
+// The back room's second tenant. Same screen, same offer cards, different
+// contract: prices instead of picks, a wallet instead of a floor, and leaving
+// is free — TAKE NOTHING forfeits picks in a run, but a shop you can only
+// browse once is not a shop.
+
+function syncShop () {
+  const r = run
+  $('#brHead').textContent = 'THE SHOP'
+  $('#brSub').textContent =
+    `${fmt(r.score)} score in hand · ${fmt(r.spent)} spent so far. ` +
+    `A part is ${fmt(r.partPrice)}; each one fitted raises the next's price by the wall's own ` +
+    `ratio. ${SHOP.ballBundle} balls are ${fmt(SHOP.ballPrice)}.`
+  const host = $('#brOffers')
+  host.textContent = ''
+  for (const p of r.offers || []) {
+    const have = countPart(r.loadout, p.id)
+    const poor = r.score < r.partPrice
+    const b = document.createElement('button')
+    b.className = 'offer'
+    b.disabled = poor
+    if (poor) b.style.opacity = '.45'
+    b.innerHTML =
+      `<span class="nm">${p.name}</span><span class="jp2">${p.jp}</span>` +
+      `<span class="bl">${fmt(r.partPrice)} SCORE</span>` +
+      `<span class="dt">${p.blurb}</span>` +
+      (have ? `<span class="have">FITTED ×${have}${p.max ? ` OF ${p.max}` : ''}</span>` : '')
+    b.addEventListener('click', () => {
+      synth.click()
+      if (run.buy(p.id)) { drainRun(); syncShop() }
+    })
+    host.appendChild(b)
+  }
+  // The balls tile, alongside the parts — the other half of the trade.
+  const poorB = r.score < SHOP.ballPrice
+  const bb = document.createElement('button')
+  bb.className = 'offer'
+  bb.disabled = poorB
+  if (poorB) bb.style.opacity = '.45'
+  bb.innerHTML =
+    `<span class="nm">${SHOP.ballBundle} BALLS</span><span class="jp2">玉</span>` +
+    `<span class="bl">${fmt(SHOP.ballPrice)} SCORE</span>` +
+    `<span class="dt">Steel, by the hundred. Booked on the ledger's own line — bought, not won, ` +
+    `not conjured. The T key still hands them out free; this is for players who want to have ` +
+    `paid.</span>`
+  bb.addEventListener('click', () => {
+    synth.click()
+    if (run.buyBalls()) { drainRun(); syncShop() }
+  })
+  host.appendChild(bb)
+
+  const skip = $('#brSkip')
+  skip.childNodes[0].textContent = 'BACK TO THE FLOOR'
+  skip.querySelector('small').textContent = 'the shelf keeps; leaving costs nothing'
+}
+
+$('#brSkip').addEventListener('click', () => {
+  synth.click()
+  if (run && run.sandbox) { go('play'); return }
+  run.skip(); afterDraft()
+})
 
 /** The draft moved on: either deal again, or descend. */
 function afterDraft () {
@@ -490,7 +606,8 @@ for (const [key, S] of Object.entries(SPECS)) {
     // silently delete the run — the options sheet is reachable from the play
     // screen. During a run the CABINET owns the spec, so this is refused
     // outright rather than allowed to quietly cost somebody eight floors.
-    if (run && run.status !== 'failed') {
+    // A sandbox restarts freely; its wallet is the cost the player accepted.
+    if (run && !run.sandbox && run.status !== 'failed') {
       banner('NOT MID-RUN', 'the cabinet chose the class — this is a FREE PLAY setting')
       return
     }
@@ -669,9 +786,9 @@ addEventListener('keydown', (e) => {
     //
     // Not during a RUN. The whole roguelike rests on the tray being a clock,
     // and a key that refills the clock is not a difficulty option, it is the
-    // absence of a game. FREE PLAY is where the frictionless exhibit lives and
-    // it is one keypress from the title screen.
-    if (run) {
+    // absence of a game. FREE PLAY is where the frictionless exhibit lives —
+    // its sandbox run is scoreboard, not clock, so the conjure stays.
+    if (run && !run.sandbox) {
       banner('NOT IN A RUN', 'the tray is the clock — FREE PLAY has no clock at all')
     } else {
       machine.addTokens(500)
@@ -761,7 +878,9 @@ function tick (dt, t = lastT) {
   // In a run the tray IS the floor's remaining launches — see run.js. Writing
   // it here rather than letting the Machine keep its own balance is what makes
   // the number under the board and the number in the panel the same number.
-  if (run) machine.tokens = Math.max(0, run.ballsLeft)
+  // The sandbox is the exception: there the machine OWNS its balance (that is
+  // the exhibit), and the run is scoreboard only.
+  if (run && !run.sandbox) machine.tokens = Math.max(0, run.ballsLeft)
   machine.firing = firingHeld && machine.tokens > 0
   machine.step(dt)
 
@@ -810,7 +929,13 @@ function tick (dt, t = lastT) {
     if (bannerTimer <= 0) $('#banner').classList.remove('on')
   }
 
-  state.tokens = machine.tokens
+  // The persisted balance belongs to FREE PLAY. A real run's tray must not
+  // write it — the mirror at the top of this function copies the tray into
+  // machine.tokens every tick, and persisting that stomped the sandbox's
+  // saved balance (including balls BOUGHT with score) the moment a run was
+  // played (review finding: buy 100 balls, die on floor 1, and the purchase
+  // was gone with no event, no refund, no ledger trace).
+  if (!run || run.sandbox) state.tokens = machine.tokens
 }
 
 /**
@@ -894,6 +1019,26 @@ function drainRun () {
 
       case 'runWon':
         banner('十二階  TWELVE FLOORS', 'banked. now find out where it stops')
+        break
+
+      case 'fitted':
+        // In a run, take() handles the flow and this event is just record.
+        // In the sandbox it is the purchase landing: new brass, same session —
+        // refit keeps the ledger and the lottery where buildFloor would wipe
+        // them. The door refused entry during a party, so refit cannot.
+        if (run.sandbox) {
+          machine.refit(run.loadout)
+          dop = new Dopamine(BOARD.w, BOARD.h)
+          renderer.trails.clear()
+          renderer.ripples.length = 0
+          renderer.bucketFlare.clear()
+        }
+        break
+
+      case 'ballsBought':
+        // The run moved the score; the machine books the balls on its own
+        // line. One direction each — the run never touches the machine.
+        machine.buyTokens(ev.n)
         break
     }
   }
@@ -1026,9 +1171,15 @@ function handleEvents (events) {
       case 'spinLose':
         dop.endRamp()
         // A reach that lost is the near-miss. Pleasantness down, motivation up.
+        // A PAID miss is neither: the consolation just handed over balls, so
+        // neither the sour unvarnished tone nor the bare-loss dopamine push
+        // belongs to it — the cascade announces what actually happened. This
+        // gate is also what keeps the 'lose' voice's mechanism-family law
+        // true: ungated, half of all logged losses co-occurred with a real
+        // payment, Δp ≈ 0.5 against a declared ≈ 0 (review finding).
         if (ev.reach) dop.nearMiss(true)
-        else dop.push(-0.8)
-        synth.lose(ev.reach, state.varnish)
+        else if (!ev.paid) dop.push(-0.8)
+        if (!ev.paid) synth.lose(ev.reach, state.varnish)
         break
 
       case 'jackpot': {
@@ -1097,7 +1248,15 @@ function handleEvents (events) {
         break
 
       case 'empty':
-        banner('OUT OF TOKENS', 'press T for five hundred more — it will be noted')
+        // Two truthful arms: the sandbox names both faucets; a run names the
+        // fact. The old run-mode text advised pressing T — the exact key the
+        // run guard refuses — in the only mode the text could still appear
+        // (review finding: the shell instructed the player to do the thing
+        // its own guard forbids).
+        banner('OUT OF TOKENS',
+          run && run.sandbox
+            ? 'T conjures 500 free — or the shop below sells 100 for 4,000 score'
+            : 'the tray is the clock — what is still on the board is all there is')
         break
 
       case 'pay':
@@ -1107,6 +1266,26 @@ function handleEvents (events) {
         // Refunds do not pass through pay(), and must not: a fouled ball
         // returning is a spend reversed, not a gain.
         renderer.rewardPulse(ev.n)
+        // The consolation has no pocket handler to cascade from — its balls
+        // land in the tray here. Legal for the reward family by construction:
+        // this arm of the switch cannot be reached unless the ledger moved.
+        if (ev.source === 'hazure') synth.cascade(ev.n, state.varnish)
+        break
+
+      case 'sequence':
+        // 順目. The run scores it (that pop arrives via the score event); the
+        // board acknowledges with lamps only — no new voice, because the cue
+        // taxonomy has no honest drawer for an RNG display event that pays
+        // score rather than balls, and a borrowed one would misfile.
+        renderer.lampBurst(0.5)
+        break
+
+      case 'split':
+        // The gold ball parting. A mechanism fact with a mechanism voice —
+        // one ball became two, audibly and visibly, whatever it later earns.
+        renderer.flash(ev.x, ev.y, 0.9)
+        renderer.pop(ev.x, ev.y, '×2', 1.0)
+        synth.split(state.varnish)
         break
 
       case 'holdOverflow':

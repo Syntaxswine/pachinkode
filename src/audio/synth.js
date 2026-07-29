@@ -85,6 +85,7 @@ export const CUE_FAMILY = {
   jackpotBuild: 'reward',
 
   impact: 'mechanism',
+  split: 'mechanism',
   launch: 'mechanism',
   ratchet: 'mechanism',
   foul: 'mechanism',
@@ -407,6 +408,19 @@ export class Synth {
     this.mark('tulip')
     const v = clamp(varnish)
     this.tone(660, 0.14, 0.14 * (0.4 + 0.6 * v), 'triangle')
+  }
+
+  /**
+   * A gold ball parting into two. Mechanism family: it announces a physical
+   * fact of the board — one body became two — and carries no claim about
+   * payout (the twins earn whatever they earn). Two detuned strikes a
+   * semitone apart, because that is what it is: one impact heard twice.
+   */
+  split (varnish = 1) {
+    this.mark('split')
+    const v = clamp(varnish)
+    this.tone(1244.5, 0.06, 0.10 * (0.5 + 0.5 * v), 'triangle', this.busImpacts)
+    this.tone(1318.5, 0.08, 0.09 * (0.5 + 0.5 * v), 'triangle', this.busImpacts, 0.03)
   }
 
   /** The reels turning. A dry mechanical tick — no pitch ramp. */

@@ -20,11 +20,12 @@ export class Hud {
     this.el.innerHTML = `
       <div class="sect" id="runbox" style="display:none">
         <div class="k" id="rFloor">FLOOR 1</div>
-        <div class="q"><span id="rScore">0</span> <span style="color:var(--dim);font-size:12px">/ <span id="rQuota">0</span></span></div>
-        <div class="qbar"><i id="rBar" style="width:0%"></i></div>
-        <div class="stat"><span>balls left</span><span id="rBalls">0</span></div>
+        <div class="q"><span id="rScore">0</span> <span id="rQuotaWrap" style="color:var(--dim);font-size:12px">/ <span id="rQuota">0</span></span></div>
+        <div class="qbar" id="rBarWrap"><i id="rBar" style="width:0%"></i></div>
+        <div class="stat" id="rBallsRow"><span>balls left</span><span id="rBalls">0</span></div>
         <div class="stat"><span>chain</span><span id="rChain">—</span></div>
-        <div class="stat"><span>run total</span><span id="rTotal">0</span></div>
+        <div class="stat" id="rTotalRow"><span>run total</span><span id="rTotal">0</span></div>
+        <div class="stat" id="rSpentRow" style="display:none"><span>spent at the shop</span><span id="rSpent">0</span></div>
         <div class="tiny" id="rParts"></div>
       </div>
 
@@ -39,6 +40,7 @@ export class Hud {
         <div class="stat"><span>spent</span><span id="hSpent">0</span></div>
         <div class="stat"><span>won back</span><span id="hWon">0</span></div>
         <div class="stat"><span>conjured</span><span id="hConj">0</span></div>
+        <div class="stat" id="hBoughtRow" style="display:none"><span>bought with score</span><span id="hBought">0</span></div>
         <div class="stat"><span>return</span><span id="hRtp">—</span></div>
         <div class="tiny" id="hYen"></div>
       </div>
@@ -93,7 +95,8 @@ export class Hud {
           Press <b>V</b> to toggle.</div>
       </div>`
     for (const id of ['runbox', 'kTokens', 'rFloor', 'rScore', 'rQuota', 'rBar', 'rBalls',
-      'rChain', 'rTotal', 'rParts',
+      'rChain', 'rTotal', 'rParts', 'rQuotaWrap', 'rBarWrap', 'rBallsRow', 'rTotalRow',
+      'rSpentRow', 'rSpent', 'hBoughtRow', 'hBought',
       'hTokens', 'hBalls', 'hSpent', 'hWon', 'hConj', 'hRtp', 'hYen',
       'hDial', 'hPull', 'hRoute', 'hRate', 'hScat', 'mScat', 'hShots', 'hLaunchNote',
       'hOdds', 'hKoOdds', 'hSpins', 'hHolds', 'hJack', 'hKo', 'hLottery', 'hDa', 'mDa', 'hAro', 'mAro',
@@ -107,20 +110,35 @@ export class Hud {
     // The run box, when there is a run. In FREE PLAY it is absent entirely
     // rather than showing zeroes — a quota of nothing is not information.
     this.runbox.style.display = run ? '' : 'none'
-    this.kTokens.textContent = run ? 'THE TRAY' : 'TOKENS'
+    this.kTokens.textContent = run && !run.sandbox ? 'THE TRAY' : 'TOKENS'
     if (run) {
-      const over = run.floor > 12
-      this.rFloor.textContent = over ? `OVERTIME ${run.floor - 12}` : `FLOOR ${run.floor} OF 12`
-      this.rScore.textContent = Math.round(run.floorScore).toLocaleString('en-US')
-      this.rQuota.textContent = Math.round(run.quota).toLocaleString('en-US')
-      this.rBar.style.width = (run.progress * 100).toFixed(1) + '%'
-      // The stylesheet has always promised a teal bar for a met quota; wire it.
-      // It matters now that the floor keeps playing past the line — the panel
-      // should agree with the floor bar about which side of it you are on.
-      this.rBar.parentElement.classList.toggle('met', !!run.metQuota)
-      this.rBalls.textContent = Math.max(0, run.ballsLeft)
+      const sb = !!run.sandbox
+      // The sandbox shows the WALLET where a run shows the floor: no quota,
+      // no bar, no balls-left (the machine owns its balance there), and a
+      // spent line so the trade is a running total, not a vanish.
+      this.rQuotaWrap.style.display = sb ? 'none' : ''
+      this.rBarWrap.style.display = sb ? 'none' : ''
+      this.rBallsRow.style.display = sb ? 'none' : ''
+      this.rTotalRow.style.display = sb ? 'none' : ''
+      this.rSpentRow.style.display = sb ? '' : 'none'
+      if (sb) {
+        this.rFloor.textContent = 'FREE PLAY — SCORE IS A WALLET'
+        this.rScore.textContent = Math.round(run.score).toLocaleString('en-US')
+        this.rSpent.textContent = Math.round(run.spent).toLocaleString('en-US')
+      } else {
+        const over = run.floor > 12
+        this.rFloor.textContent = over ? `OVERTIME ${run.floor - 12}` : `FLOOR ${run.floor} OF 12`
+        this.rScore.textContent = Math.round(run.floorScore).toLocaleString('en-US')
+        this.rQuota.textContent = Math.round(run.quota).toLocaleString('en-US')
+        this.rBar.style.width = (run.progress * 100).toFixed(1) + '%'
+        // The stylesheet has always promised a teal bar for a met quota; wire it.
+        // It matters now that the floor keeps playing past the line — the panel
+        // should agree with the floor bar about which side of it you are on.
+        this.rBar.parentElement.classList.toggle('met', !!run.metQuota)
+        this.rBalls.textContent = Math.max(0, run.ballsLeft)
+        this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')
+      }
       this.rChain.textContent = run.chain > 0 ? `${run.chain} · ×${run.mult.toFixed(1)}` : '—'
-      this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')
       // Every part fitted, named. A roguelike whose build is invisible is a
       // roguelike where the player cannot reason about the next pick.
       const counts = {}
@@ -134,6 +152,11 @@ export class Hud {
     this.hSpent.textContent = m.spent
     this.hWon.textContent = m.won
     this.hConj.textContent = m.conjured
+    // The fourth ledger line appears only once it is non-zero — three lines
+    // is the exhibit's resting state, and a permanent 0 would beg a question
+    // the run modes never answer.
+    this.hBoughtRow.style.display = m.bought > 0 ? '' : 'none'
+    this.hBought.textContent = m.bought
     this.hRtp.textContent = m.spent > 40 ? pct(m.rtp) : '—'
 
     // The honest ledger. Ball rental has been capped at ¥4 since 1978, and the

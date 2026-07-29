@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN } from '../src/sim/run.js'
+import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_BASE, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN, FLOOR1_EASE, SHOP, sandboxCabinet } from '../src/sim/run.js'
 import {
   baseLoadout, resolveLoadout, drawOffers, partAvailable, countPart,
   PARTS, PART_BY_ID, BUCKET_SITES, SITE_ORDER, BUCKET_MOUTH_MAX
 } from '../src/sim/loadout.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, newMeta, recordRun, RUNS_KEPT } from '../src/sim/cabinets.js'
-import { buildBoard } from '../src/sim/board.js'
+import { buildBoard, makeBall } from '../src/sim/board.js'
 import { Machine } from '../src/sim/machine.js'
 import { makeRng } from '../src/sim/rng.js'
 
@@ -189,11 +189,14 @@ test('the chain multiplier is capped', () => {
 // ── the curve ───────────────────────────────────────────────────────────────
 
 test('the quota grows geometrically and never goes backwards', () => {
+  // From floor 2 on. Floor 1 is the eased on-ramp (FLOOR1_EASE) and sits
+  // BELOW the curve on purpose — the geometric law owns floors 2+, where the
+  // crunch lives, and the 1→2 step is deliberately the biggest in the game.
   let prev = 0
   for (let f = 1; f <= FLOORS + 8; f++) {
     const q = quotaFor(f, null, 1)
     assert.ok(q > prev, `floor ${f} asks for less than floor ${f - 1}`)
-    if (f > 1) {
+    if (f > 2) {
       const ratio = q / quotaFor(f - 1, null, 1)
       assert.ok(Math.abs(ratio - QUOTA_GROWTH) < 0.02,
         `floor ${f} is off the curve at ×${ratio.toFixed(3)}`)
@@ -265,6 +268,19 @@ test('meeting the quota keeps the floor live instead of pausing it', () => {
   const ev = run.drain().find(e => e.type === 'quotaMet')
   assert.ok(ev, 'no quotaMet event')
   assert.equal(ev.ballsLeft, run.ballsLeft)
+  // Floor 1 prints NO price — the on-ramp pays one part and sells nothing
+  // more, and a price for a part that cannot arrive is a lie (see nextPickAt).
+  assert.equal(ev.nextPickAt, null)
+})
+
+test('from floor 2, the next part is a stated price on the quotaMet event', () => {
+  const run = new Run(cab, 9)
+  clearFloor(run)
+  while (run.status === 'cleared') run.take(run.offers[0].id)
+  run.drain()
+  toQuota(run)
+  const ev = run.drain().find(e => e.type === 'quotaMet')
+  assert.ok(ev, 'no quotaMet on floor 2')
   assert.ok(ev.nextPickAt > run.floorScore, 'the next part must be a stated price')
 })
 
@@ -276,6 +292,269 @@ test('the door is shut before the quota and after the floor', () => {
   assert.equal(run.bank(), true)
   assert.equal(run.status, 'cleared')
   assert.equal(run.bank(), false, 'banked the same floor twice')
+})
+
+// ── the lottery's lesser verdicts (operator's rulings) ──────────────────────
+
+test('a straight scores between a bucket and the small win, from the lottery', () => {
+  assert.ok(SCORE.sequence > SCORE.bucket && SCORE.sequence < SCORE.koatari,
+    'the operator’s band: more than a bucket, not a jackpot')
+  assert.equal(SCORE_ORIGIN.sequence, 'lottery',
+    'three digits you never touched came out in a row — that is the RNG’s credit')
+  const run = new Run(cab, 9)
+  const before = run.score
+  run.observe([{ type: 'sequence', syms: [3, 4, 5], dir: 'up' }], 0.001, { inFlight: 1 })
+  assert.ok(run.score >= before + SCORE.sequence, 'the straight scored nothing')
+})
+
+test('straights announce both ways round the wrap; total misses pay the lowest digit', () => {
+  const m = new Machine({ seed: 3, tokens: 100 })
+  m.drain()
+  m.lastResolve = { kind: 'lose', at: 0 }
+  m.resolveMiss([3, 4, 5], false)
+  let evs = m.drain()
+  assert.ok(evs.some(e => e.type === 'sequence'), 'no sequence event for 3-4-5')
+  const pay = evs.find(e => e.type === 'pay')
+  assert.ok(pay && pay.n === 3 && pay.source === 'hazure',
+    'a total miss must pay the lowest of the three digits')
+  // Descending through the wrap — and carrying a zero, which pays nothing.
+  m.lastResolve = { kind: 'lose', at: 0 }
+  m.resolveMiss([1, 0, 7], false)
+  evs = m.drain()
+  assert.ok(evs.some(e => e.type === 'sequence'), '1-0-7 descending wrap missed')
+  assert.ok(!evs.some(e => e.type === 'pay'), 'a zero on the display paid')
+  // A reach is never consoled; nor is a pair — total means total.
+  m.lastResolve = { kind: 'lose', at: 0 }
+  m.resolveMiss([2, 5, 2], true)
+  assert.ok(!m.drain().some(e => e.type === 'pay'), 'a reach was consoled')
+  m.lastResolve = { kind: 'lose', at: 0 }
+  m.resolveMiss([4, 4, 6], false)
+  assert.ok(!m.drain().some(e => e.type === 'pay'), 'a pair was consoled')
+})
+
+// ── the gold ball ───────────────────────────────────────────────────────────
+
+test('the gold ball is catalogued rare, capped at one, and sets the flag', () => {
+  const p = PART_BY_ID.goldball
+  assert.ok(p, 'no goldball part')
+  assert.equal(p.max, 1)
+  assert.ok(p.weight <= 6, 'GOLD BALLS must stay rare — it is overpowered by ruling')
+  assert.equal(resolveLoadout(['goldball']).goldBalls, true)
+  assert.equal(baseLoadout().goldBalls, false)
+})
+
+test('a gold ball splits once at its first nail into two silver balls, opposite ways', () => {
+  const { world } = buildBoard(baseLoadout())
+  const nail = world.nails[Math.floor(world.nails.length / 2)]
+  world.spawn(makeBall(nail.x + 0.0002, nail.y - 0.02, 0, 0.4, { gold: true }))
+  let split = null
+  const all = []
+  for (let i = 0; i < 1200 && !split; i++) {
+    world.step()
+    for (const ev of world.drainEvents()) { all.push(ev); if (ev.type === 'split') split = ev }
+  }
+  assert.ok(split, 'the gold ball never split (dropped square onto a nail)')
+  assert.equal(world.balls.length, 2, 'one ball did not become two')
+  const [a, b] = world.balls
+  assert.ok(!a.gold && !b.gold, 'a twin stayed gold — the split must be once, ever')
+  assert.ok(a.vx * b.vx <= 0, 'the twins left in the same direction')
+  assert.equal(all.filter(e => e.type === 'split').length, 1, 'more than one split from one ball')
+})
+
+// ── review pins: the second adversarial pass, 2026-07-28 ────────────────────
+
+test('a split twin fouling back is a drain, never a refund', () => {
+  // A twin was BORN in play — its launch is still on the field as its
+  // sibling. Refunding it paid one launch twice while half of it kept
+  // scoring (measured: 15 phantom refunds per 1,500 launches).
+  const m = new Machine({ seed: 3, tokens: 100 })
+  m.drain()
+  const twin = makeBall(0.1, 0.3, 0, 0, { split: true })
+  const played = makeBall(0.1, 0.3, 0, 0); played.hits = 4
+  const fresh = makeBall(0.1, 0.3, 0, 0)
+  const spent0 = m.spent
+  m.onPocket({ kind: 'foul', x: 0.1, y: 0.39, ball: twin })
+  m.onPocket({ kind: 'foul', x: 0.1, y: 0.39, ball: played })
+  const evs1 = m.drain()
+  assert.ok(!evs1.some(e => e.type === 'foul'), 'a played ball was refunded as a foul')
+  assert.ok(evs1.filter(e => e.type === 'drain').length === 2)
+  assert.equal(m.spent, spent0, 'the ledger refunded a launch that is still in play')
+  m.onPocket({ kind: 'foul', x: 0.1, y: 0.39, ball: fresh })
+  assert.ok(m.drain().some(e => e.type === 'foul'), 'a genuine weak shot lost its refund')
+})
+
+test('the reels draw a display seed — a paying display may not run on a counter schedule', () => {
+  // With a pure spin-counter hash, straights and consolations were
+  // seed-independent and precomputable from the HUD's own counter. Two
+  // machines on different seeds must not show identical loss displays
+  // spin-for-spin.
+  const symsOf = (seed, n) => {
+    const m = new Machine({ seed, tokens: 50 })
+    const out = []
+    for (let i = 0; i < n; i++) {
+      m.spin = { t: 0, dur: 1, outcome: false, reach: false, ko: false,
+        ds: (m.rng() * 4294967296) >>> 0 }
+      out.push(m.spinSymbols().join(''))
+      m.spin = null; m.spins++
+    }
+    return out.join('|')
+  }
+  assert.notEqual(symsOf(11, 40), symsOf(29, 40),
+    'two seeds produced identical display streams — the schedule is back')
+})
+
+test('the shop shelf keeps between visits; only buying re-deals', () => {
+  const run = sbx()
+  sbxScore(run, QUOTA_BASE * 4)
+  run.shopDeal()
+  const shelf = run.offers.map(o => o.id).join('|')
+  // Door-toggling must not reroll: the shell deals only when offers is null.
+  // (The shell-side guard is `if (!run.offers) run.shopDeal()`; at the run
+  // layer the property to pin is that nothing but deal/buy touches offers.)
+  assert.equal(run.offers.map(o => o.id).join('|'), shelf)
+  run.buy(run.offers[0].id)
+  assert.ok(run.offers.length === 3, 'buying must re-deal — that is the paid reroll')
+})
+
+test('the keystone identity, amended for the wallet: base + fromChain === score + spent', () => {
+  const run = sbx()
+  sbxScore(run, QUOTA_BASE * 2)
+  run.shopDeal()
+  run.buy(run.offers[0].id)
+  const P = run.provenance
+  assert.equal(P.base + P.fromChain, run.score + run.spent,
+    'spending broke the earned-points ledger — provenance records EARNED, spent moves score aside')
+  const srcSum = Object.values(P.bySource).reduce((a, b) => a + b, 0)
+  assert.equal(srcSum, run.score + run.spent)
+  assert.equal(P.byOrigin.aimed + P.byOrigin.lottery, run.score + run.spent)
+})
+
+test('the consolation pays the run’s CLOCK — the one payout that does', () => {
+  const run = new Run(cab, 9)
+  const balls0 = run.ballsLeft
+  run.observe([{ type: 'pay', n: 3, source: 'hazure' }], 0.001, { inFlight: 1 })
+  assert.equal(run.ballsLeft, balls0 + 3,
+    'the consolation was confiscated — a printed payout nobody could receive')
+  // And an ordinary pocket payout still does NOT touch the clock at stock.
+  run.observe([{ type: 'pay', n: 3, source: 'heso' }], 0.001, { inFlight: 1 })
+  assert.equal(run.ballsLeft, balls0 + 3, 'a pocket payout leaked into the clock')
+})
+
+test('a paid miss carries its consolation on the loss event, for the honest voices', () => {
+  const m = new Machine({ seed: 3, tokens: 100 })
+  m.drain()
+  m.lastResolve = { kind: 'lose', at: 0 }
+  const paid = m.resolveMiss([3, 5, 1], false)
+  assert.equal(paid, 1, 'resolveMiss must report what it paid so spinLose can carry it')
+  m.lastResolve = { kind: 'lose', at: 0 }
+  assert.equal(m.resolveMiss([4, 4, 6], false), 0)
+})
+
+// ── the on-ramp: floor 1 is easy, and pays exactly one part ─────────────────
+
+test('floor 1 is eased and floors 2+ are untouched by the ease', () => {
+  const L = baseLoadout()
+  assert.equal(quotaFor(1, L, 1), Math.round(QUOTA_BASE * FLOOR1_EASE))
+  assert.equal(quotaFor(2, L, 1), Math.round(QUOTA_BASE * QUOTA_GROWTH),
+    'the ease leaked past the on-ramp — the crunch moved')
+})
+
+test('floor 1 pays one part with no surplus, at any overshoot', () => {
+  const run = new Run(cab, 9)
+  toQuota(run)
+  run.floorScore = run.quota * 64      // eight-times-doubled — 3 picks anywhere else
+  assert.equal(run.surplusPicks(), 0, 'floor 1 sold a surplus part')
+  assert.equal(run.picksEarned(), 1)
+  assert.equal(run.nextPickAt(), null,
+    'floor 1 printed a price for a part that can never arrive — the instrument caught the ' +
+    'auto-player chasing that phantom and carrying less into floor 2')
+})
+
+// ── the sandbox: free play's score is a wallet ──────────────────────────────
+
+const sbx = () => new Run(sandboxCabinet('amadeji'), 5)
+const sbxScore = (run, n) => {
+  while (run.score < n) {
+    run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
+      { inFlight: 1 })
+  }
+}
+
+test('the sandbox never meets a quota and never fails', () => {
+  const run = sbx()
+  sbxScore(run, 50000)
+  assert.equal(run.metQuota, false, 'a quota of zero "met" on the first point')
+  assert.equal(run.status, 'playing')
+  run.ballsLeft = 0
+  run.observe([], 0.016, { inFlight: 0 })
+  assert.equal(run.status, 'playing', 'the sandbox ended — it must not have an ending')
+  assert.equal(run.bank(), false, 'the sandbox banked — there is no next floor')
+})
+
+test('the shop sells a part, deducts the price, and escalates by the wall ratio', () => {
+  const run = sbx()
+  sbxScore(run, QUOTA_BASE * 3)
+  const wallet = run.score
+  const price0 = run.partPrice
+  assert.equal(price0, QUOTA_BASE,
+    'the first part must cost QUOTA_BASE — the curve’s anchor, not the eased on-ramp quota')
+  run.shopDeal()
+  assert.ok(run.buy(run.offers[0].id))
+  assert.equal(run.score, wallet - price0, 'the wallet did not pay')
+  assert.equal(run.spent, price0)
+  assert.equal(run.loadout.parts.length, 1, 'paid and not fitted')
+  assert.equal(run.partPrice, Math.round(QUOTA_BASE * QUOTA_GROWTH),
+    'the price did not climb by the wall’s ratio')
+  assert.ok(run.offers && run.offers.length === 3, 'the shelf was not re-dealt')
+})
+
+test('the shop refuses a poor wallet and a non-sandbox run', () => {
+  const run = sbx()
+  run.shopDeal()
+  assert.equal(run.buy(run.offers[0].id), false, 'sold on credit')
+  assert.equal(run.buyBalls(), false)
+  assert.equal(run.loadout.parts.length, 0)
+  const real = new Run(cab, 9)
+  assert.equal(real.shopDeal(), null, 'a real run opened the shop')
+  assert.equal(real.buyBalls(), false, 'a real run bought balls — the tray is a clock')
+})
+
+test('buying balls spends score and emits for the shell; the run never touches a machine', () => {
+  const run = sbx()
+  sbxScore(run, SHOP.ballPrice + 500)
+  const wallet = run.score
+  run.drain()
+  assert.ok(run.buyBalls())
+  assert.equal(run.score, wallet - SHOP.ballPrice)
+  const ev = run.drain().find(e => e.type === 'ballsBought')
+  assert.ok(ev, 'no ballsBought event for the shell to act on')
+  assert.equal(ev.n, SHOP.ballBundle)
+})
+
+test('machine.buyTokens books bought balls on their own ledger line, and pays nothing', () => {
+  const m = new Machine({ seed: 3, tokens: 100 })
+  m.drain()
+  m.buyTokens(100)
+  assert.equal(m.tokens, 200)
+  assert.equal(m.bought, 100)
+  assert.equal(m.conjured, 100, 'a purchase was booked as conjured')
+  assert.equal(m.won, 0, 'a purchase was booked as won — reward cues would fire on a shop click')
+  const evs = m.drain()
+  assert.ok(evs.some(e => e.type === 'purchase'))
+  assert.ok(!evs.some(e => e.type === 'pay'), 'a purchase emitted pay — the reward hook would hear it')
+})
+
+test('machine.refit swaps the brass and keeps the ledger and the lottery', () => {
+  const m = new Machine({ seed: 3, tokens: 400 })
+  m.spent = 77; m.won = 31; m.holds = 2; m.spins = 12
+  const L = resolveLoadout(['bucket', 'widen'])
+  assert.ok(m.refit(L))
+  assert.equal(m.loadout, L)
+  assert.equal(m.spent, 77, 'the ledger reset — a purchase must not launder the session')
+  assert.equal(m.won, 31)
+  assert.equal(m.holds, 2, 'the pending queue was eaten by the fitter')
+  assert.equal(m.spins, 12)
+  assert.ok(m.parts.buckets.length > 0, 'the new brass is not on the board')
 })
 
 test('balls in flight when the door is taken resolve for nothing', () => {
@@ -343,6 +622,7 @@ test('pushing on until the tray is empty clears the floor, it does not fail the 
 
 test('surplus buys parts by doubling, and the ceiling holds', () => {
   const run = new Run(cab, 9)
+  run.floor = 2                    // floor 1 sells no surplus — see the on-ramp
   run.quota = 1000
   run.floorScore = 999
   assert.equal(run.surplusPicks(), 0, 'a part was bought before the quota was even met')

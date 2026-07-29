@@ -166,7 +166,12 @@
   .offers { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
   .offer { border: 1px solid var(--faint); padding: 13px 14px; background: transparent;
            text-align: left; display: flex; flex-direction: column; gap: 6px; transition: .13s; }
-  .offer:hover, .offer:focus-visible { border-color: var(--hot); background: #171d25; outline: none; }
+  /* The shop deals disabled (unaffordable) offers — the run's back room never
+     did — so the hover affordance is gated like .cab's: a card that cannot be
+     bought must not light up like one that can. */
+  .offer:hover:not([disabled]), .offer:focus-visible:not([disabled]) {
+    border-color: var(--hot); background: #171d25; outline: none; }
+  .offer[disabled] { cursor: default; }
   .offer .nm { letter-spacing: .14em; color: #eef3f8; font-size: 12px; }
   .offer .jp2 { color: var(--dim); letter-spacing: .28em; font-size: 10px; }
   .offer .bl { color: var(--hot); font-size: 10.5px; line-height: 1.6; }
@@ -246,7 +251,7 @@
   <nav class="menu">
     <button id="resumeRun" style="display:none">RESUME RUN<small id="resumeSub"></small></button>
     <button data-go="cabinets">NEW RUN<small>twelve floors, a quota on each, and a back room between them</small></button>
-    <button data-go="play" data-mode="free">FREE PLAY<small>the machine on its own, no quota, no clock — abandons a run in progress</small></button>
+    <button data-go="play" data-mode="free">FREE PLAY<small>no quota, no clock — score buys parts and balls at the shop. abandons a run in progress</small></button>
     <button data-go="records">RECORDS<small>every run this browser remembers, and what it was worth</small></button>
     <button data-go="options">OPTIONS<small>sound · varnish · fire rate · machine class</small></button>
     <button data-go="about">ABOUT<small>what is real in here, and what is not</small></button>
