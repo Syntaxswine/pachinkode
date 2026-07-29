@@ -538,6 +538,33 @@ above 1.00 by construction and every row reads "1.00×" whether it was a scrape 
 Meeting the quota opens a choice rather than ending the floor: PUSH ON for surplus score, which
 buys extra parts on a doubling scale, or BANK the tray into the next floor's allowance.
 
+**The choice is made live, at the launcher** (operator's ruling, 2026-07-28: the flow of play
+must not stop). The first version froze the board behind a modal with two buttons; now meeting
+the quota changes nothing about the floor's motion — the launcher stays hot, the chain keeps
+running, and the one new affordance is a door: a bar at the stage's foot whose button banks
+whatever is left and descends. Pushing on stopped being a menu option because it never really
+was one — it is a thing a player does with their hands, by continuing to fire. The modal had
+been quietly deleting half the decision's texture: under it, you chose PUSH ON once and were
+committed; live, every ball fired past the quota is the choice being re-made, and stopping to
+stare at the bar with three balls still falling is the game's best moment of doubt. DESIGN, but
+the door's mechanics are pinned by test: it opens exactly when the quota falls, refuses before,
+refuses twice, and the quota announces itself exactly once per floor.
+
+Re-measured under the live door (24 runs per policy, the policy now consulted every step):
+floor-1 clear 79% (against 70% at n=10 before — binomial noise around the same rate; no policy
+can touch pre-quota clears), crossover floor 6, both inside the tool's printed bands, and both
+**identical across all three policies** — the validity check that the metric reads the board
+rather than the player. The shape held: floor 1 filters at 76% cost, floors 2–3 crunch above a
+full tray (124%/119%), overtime floors clear on 1–2%.
+
+One number moved for a *mechanical* reason worth naming (a review pass caught it): floor 2's
+cost fell from the old table's 205% to 124–151%. Per-step thrifty banks the residual tray after
+buying the reachable part — an outcome the modal made structurally impossible (its thrifty
+answered once, chose push, and ran the tray dry) — so next-floor trays are systematically
+bigger, and the cost column's denominator is the tray the floor *opened* with, carry included.
+Cost percentages are therefore policy-dependent even though the difficulty is not; compare them
+only within one policy.
+
 Two design constraints made it work rather than merely exist.
 
 **Surplus picks are strictly ON TOP of the base.** `picksFor` is the function the difficulty
@@ -576,19 +603,22 @@ allowance, so a floor can spend twice what it opened with. The shape worth notic
 **floor 1 is a filter and floors 2–3 are the crunch** — the hardest moment of a run arrives
 after the player has taken one part and thinks they understand the machine.
 
-**Is it actually a decision?** Only if no policy dominates, so all three were measured (8 runs
-each, stock cabinet, `--push bank|push|thrifty`):
+**Is it actually a decision?** Only if no policy dominates, so all three were measured — and
+re-measured after the decision went live (24 runs each, stock cabinet, `--push
+bank|push|thrifty`, policies consulted every step):
 
 | policy | runs cleared | median score |
 |---|---|---|
-| always bank | 5/8 | 357,720 |
-| always push | 4/8 | 10,113,403,534 |
-| thrifty | 5/8 | 5,563,683,422 |
+| always bank | 17/24 | 94,905,163 |
+| thrifty | 18/24 | 703,862,469 |
+| always push | 16/24 | 268,498,892,088 |
 
-Banking buys survival. Pushing buys four orders of magnitude of score and costs a run. The
-floor-1 clear rate and the crossover floor are identical across all three, which is the expected
-result and a useful check on the instrument: the decision happens strictly AFTER the quota is met,
-so it cannot move how hard meeting it was.
+Banking buys survival. Pushing buys three and a half orders of magnitude of score and costs
+runs. The floor-1 clear rate (79%) and the crossover floor (6) are identical across all three,
+which is the expected result and a useful check on the instrument: the decision happens strictly
+AFTER the quota is met, so it cannot move how hard meeting it was. (An earlier 8-run table under
+the modal decision showed the same ordering with a wider spread — the trade survived the flow
+change intact.)
 
 That last point also forced a metric change. "Tray spent to clear" stopped meaning anything the
 moment PUSH ON existed — a player who pushes spends the whole tray by definition, so the column

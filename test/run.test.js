@@ -230,10 +230,10 @@ test('SOFTER QUOTA lowers the wall and cannot invert it', () => {
 
 // ── floors, drafts, overtime ────────────────────────────────────────────────
 
-/** Score a run to its quota without simulating any physics. Stops at the decision. */
+/** Score a run to its quota without simulating any physics. */
 function toQuota (run) {
   let guard = 0
-  while (run.status === 'playing' && guard++ < 40000) {
+  while (run.status === 'playing' && !run.metQuota && guard++ < 40000) {
     run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
       { inFlight: 1 })
   }
@@ -243,16 +243,23 @@ function toQuota (run) {
 /** Reach the quota and bank — the plain path through a floor. */
 function clearFloor (run) {
   toQuota(run)
-  if (run.status === 'decision') run.bank()
+  if (run.status === 'playing' && run.metQuota) run.bank()
   return run
 }
 
 // ── the decision: push on, or bank the tray ─────────────────────────────────
+//
+// The decision is LIVE: meeting the quota does not pause the floor or change
+// its status. It opens `bank()` — a door, not a menu. Pushing on is simply
+// continuing to fire, so there is no pushOn() to test; what must hold instead
+// is that the floor stays fully alive after the quota, and that the door
+// opens exactly once, exactly then, and closes exactly when the floor ends.
 
-test('meeting the quota opens a decision instead of ending the floor', () => {
+test('meeting the quota keeps the floor live instead of pausing it', () => {
   const run = new Run(cab, 9)
   toQuota(run)
-  assert.equal(run.status, 'decision')
+  assert.equal(run.status, 'playing', 'the quota froze the floor')
+  assert.equal(run.metQuota, true)
   assert.ok(run.floorScore >= run.quota)
   assert.ok(run.ballsLeft > 0, 'the decision is meaningless with an empty tray')
   const ev = run.drain().find(e => e.type === 'quotaMet')
@@ -261,12 +268,37 @@ test('meeting the quota opens a decision instead of ending the floor', () => {
   assert.ok(ev.nextPickAt > run.floorScore, 'the next part must be a stated price')
 })
 
+test('the door is shut before the quota and after the floor', () => {
+  const run = new Run(cab, 9)
+  assert.equal(run.bank(), false, 'banked a floor that had not been cleared')
+  assert.equal(run.status, 'playing')
+  toQuota(run)
+  assert.equal(run.bank(), true)
+  assert.equal(run.status, 'cleared')
+  assert.equal(run.bank(), false, 'banked the same floor twice')
+})
+
+test('balls in flight when the door is taken resolve for nothing', () => {
+  // Run#bank documents the forfeit as a ruling, not an accident — timing is
+  // part of the choice. Pinned so a future refactor of the status guard in
+  // add()/observe() cannot silently un-make it (review finding: the rule was
+  // enforced only incidentally).
+  const run = new Run(cab, 9)
+  toQuota(run)
+  run.bank()
+  const score = run.score, fs = run.floorScore, picks = run.picksLeft
+  run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
+    { inFlight: 1 })
+  assert.equal(run.score, score, 'a closed book took a score')
+  assert.equal(run.floorScore, fs)
+  assert.equal(run.picksLeft, picks, 'a late ball bought a pick')
+})
+
 test('the carry is capped at one base tray', () => {
   // Uncapped, banking is a geometric series that converges near four thousand
   // balls — a thirteen-minute floor. See Run#bank.
   const run = new Run(cab, 9)
   run.metQuota = true
-  run.status = 'decision'
   run.ballsLeft = 5000
   run.bank()
   assert.equal(run.banked, BALLS_BASE)
@@ -286,22 +318,22 @@ test('banking carries the tray into the next floor, on top of its allowance', ()
   assert.equal(run.banked, 0, 'the bank was not emptied on arrival')
 })
 
-test('pushing on keeps the floor alive and keeps scoring', () => {
+test('pushing on is just continuing to score, and the quota only announces once', () => {
   const run = new Run(cab, 9)
   toQuota(run)
+  run.drain()
   const at = run.floorScore
-  run.pushOn()
-  assert.equal(run.status, 'playing')
   run.observe([{ type: 'bucket', value: 1, x: 0.1, y: 0.3, site: 'westLow' }], 0.001,
     { inFlight: 1 })
   assert.ok(run.floorScore > at, 'surplus scored nothing')
-  assert.equal(run.status, 'playing', 'the decision re-opened — it must only ask once')
+  assert.equal(run.status, 'playing')
+  assert.ok(!run.drain().some(e => e.type === 'quotaMet'),
+    'the quota announced itself again — it must only speak once per floor')
 })
 
 test('pushing on until the tray is empty clears the floor, it does not fail the run', () => {
   const run = new Run(cab, 9)
   toQuota(run)
-  run.pushOn()
   run.ballsLeft = 0
   run.observe([], 0.016, { inFlight: 0 })
   assert.equal(run.status, 'cleared',

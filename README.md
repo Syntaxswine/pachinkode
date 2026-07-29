@@ -14,11 +14,12 @@ the tray runs out and the **back room** deals you parts — another bucket, wide
 chain, or the life nails bent another quarter-millimetre past legal. Then the next floor, which
 wants thirty per cent more.
 
-**Meeting the quota does not end the floor. It opens a choice.**
+**Meeting the quota does not end the floor. It does not even pause it. It opens a door.**
 
-*Push on* and keep firing into a floor you have already beaten: surplus score buys extra parts,
-doubling — twice the quota for one more, four times for two, eight for three. *Bank the tray* and
-every remaining ball carries into the next floor on top of its own allowance.
+*Push on* by simply not stopping: the launcher stays hot, and surplus score buys extra parts,
+doubling — twice the quota for one more, four times for two, eight for three. Or take the door
+that slides up at the foot of the board: *bank the tray*, and every remaining ball carries into
+the next floor on top of its own allowance.
 
 Neither is right. Parts compound, so a part taken early is worth more than the same part taken
 late; balls are a hedge, and the floors get harder. A player who always banks is under-built by

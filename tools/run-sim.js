@@ -79,6 +79,12 @@ const BRAIN = BRAINS[arg('greedy', 'balanced')] || BRAINS.balanced
 // measures three policies rather than assuming one. `thrifty` is the default
 // because it is the conservative read — bank unless the next part looks
 // reachable — and a curve that only works for the greedy policy is not a curve.
+//
+// A policy answers "keep pushing?" and is asked EVERY STEP once the quota is
+// met, because that is what the game now does: the floor never pauses, and
+// banking is a live door rather than a modal question. `thrifty` therefore
+// re-estimates as the tray drains and can change its mind mid-push — which is
+// what the player it models would do with the same two numbers.
 const PUSH = {
   bank: () => false,
   push: () => true,
@@ -136,13 +142,12 @@ function playFloor (run, seed, siteTally) {
       siteTally[ev.site] = (siteTally[ev.site] || 0) + 1
     }
     run.observe(evs, DT, { inFlight: m.world.balls.length })
-    // The decision, taken by policy. Left unanswered the floor hangs here —
-    // which is exactly what a player staring at the screen is doing, except
-    // they eventually click. (Unhandled, the outer loop re-played floor 1
-    // three hundred and ninety-seven times and reported a 0% clear rate.)
-    if (run.status === 'decision') {
-      if (PUSH_POLICY(run)) run.pushOn(); else run.bank()
-    }
+    // The decision, taken by policy — every step, while the floor stays live.
+    // (An earlier modal version left unanswered hung the floor forever: the
+    // outer loop re-played floor 1 three hundred and ninety-seven times and
+    // reported a 0% clear rate. The live door cannot hang — a policy that
+    // never banks simply spends the tray and clears on the way down.)
+    if (run.status === 'playing' && run.metQuota && !PUSH_POLICY(run)) run.bank()
     if (run.status !== 'playing') break
     if (run.ballsLeft <= 0 && m.world.balls.length === 0) break
     if (m.launched >= launchCap && m.world.balls.length === 0) break

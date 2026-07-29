@@ -39,6 +39,19 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
  *                real and MEASURED. Currently only the reach (two symbols
  *                matched, third crawling) and the Shepard descent, which runs
  *                under a jackpot already won.
+ *   milestone  — about the RUN's own scoreboard, not the machine's ledger.
+ *                Fires exactly when a printed threshold is crossed — the
+ *                quota, whose bar the player has watched fill — so it is
+ *                deterministic given the score and predicts nothing. It could
+ *                not honestly join the first three: 'reward' would be
+ *                falsified the first time a warp crossing meets the quota (a
+ *                warp scores but pays no ball, so the ledger does not move),
+ *                and 'mechanism' would be falsified the other way, because
+ *                most scoring pockets DO pay and the correlation is real. The
+ *                family exists so the instrument can EXEMPT it knowingly
+ *                rather than misfile it — a fourth drawer, not a loophole,
+ *                and its own law is checkable: a milestone voice may only
+ *                ever sound in the same frame its threshold event fired.
  *
  * Nothing reads this yet. That is deliberate — see the keystone.
  */
@@ -83,7 +96,10 @@ export const CUE_FAMILY = {
   select: 'mechanism',
 
   reach: 'predictive',
-  shepard: 'predictive'
+  shepard: 'predictive',
+
+  quota: 'milestone',
+  descend: 'milestone'
 }
 
 /** How many cue marks the ring buffer holds. Bounded so a long session cannot grow. */
@@ -678,6 +694,60 @@ export class Synth {
       this.tone(990, 0.30, 0.12 * v, 'triangle', null, 0.09)
     } else {
       this.tone(247, 0.22, 0.11, 'sine')
+    }
+  }
+
+  /**
+   * The quota — the floor's own bar filling, and the one voice in this game
+   * about the RUN's scoreboard rather than the machine's ledger (family
+   * 'milestone'; see CUE_FAMILY for why it could not honestly be 'reward').
+   *
+   * Shape: a major arpeggio up into a held octave over its root. An ascending
+   * contour is legal HERE and nowhere else in this file's celebration
+   * vocabulary because it announces a verdict already sealed — the cut
+   * folklore was rising pitch as ANTICIPATION, a climb toward something
+   * undecided, and this climbs toward nothing: the bar was full before the
+   * first note. Duration ~1.5 s, inside Dixon's win-jingle band and
+   * proportionate — a floor is a bigger fact than a koatari's two notes,
+   * far smaller than a jackpot's twelve seconds.
+   *
+   * At varnish 0: the fact, stated once.
+   */
+  quota (varnish = 1) {
+    this.mark('quota')
+    const v = clamp(varnish)
+    if (v > 0.5) {
+      this.tone(523.25, 0.15, 0.15 * v, 'triangle')
+      this.tone(659.25, 0.15, 0.15 * v, 'triangle', null, 0.09)
+      this.tone(783.99, 0.17, 0.16 * v, 'triangle', null, 0.18)
+      this.tone(1046.50, 0.60, 0.17 * v, 'triangle', null, 0.27)
+      this.tone(2093.00, 0.55, 0.055 * v, 'sine', null, 0.30)  // shimmer on the held top
+      this.tone(261.63, 0.62, 0.10 * v, 'sine', null, 0.27)  // the root underneath
+    } else {
+      this.tone(349.23, 0.4, 0.12, 'sine')
+    }
+  }
+
+  /**
+   * The floor closes behind you — the door taken, the descent to the next.
+   * Milestone family, same argument as quota(): floorCleared is the RUN's
+   * scoreboard speaking, and banking pays no balls, so a borrowed reward
+   * voice here would stamp Δp = 0 'reward' cues into the log once per floor
+   * and poison the instrument the log feeds. (Review finding — the old
+   * jackpot/koatari borrowings on this event were exactly that misfile.)
+   *
+   * Shape: the fanfare's top settling home, a fifth down onto its root —
+   * arrival, not a win. At varnish 0: the fact, once.
+   */
+  descend (varnish = 1) {
+    this.mark('descend')
+    const v = clamp(varnish)
+    if (v > 0.5) {
+      this.tone(783.99, 0.13, 0.13 * v, 'triangle')
+      this.tone(523.25, 0.38, 0.14 * v, 'triangle', null, 0.10)
+      this.tone(130.81, 0.48, 0.09 * v, 'sine', null, 0.10)
+    } else {
+      this.tone(220, 0.3, 0.10, 'sine')
     }
   }
 

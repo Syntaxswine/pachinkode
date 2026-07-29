@@ -18,17 +18,23 @@ test('every voice the synth can produce declares a cue family', () => {
   s.heso(1); s.tulip(1); s.koatari(1); s.kakuhen(0.65, 1); s.jackpot(0.5, 1)
   s.cascade(9, 1); s.jackpotBuild(2.6, 0.5, 1); s.launch(0.5, 0, 1); s.ratchet(0.5, 1)
   s.foul(1); s.gate(true, 1); s.spinTick(1); s.lose(false, 0); s.reach(1)
-  s.shepard(8, 1); s.click(); s.select()
+  s.shepard(8, 1); s.quota(1); s.descend(1); s.click(); s.select()
 
+  // 'milestone' joined the taxonomy with the quota fanfare: a voice about the
+  // RUN's printed scoreboard rather than the machine's ledger, added because
+  // both 'reward' (falsified by a warp crossing the quota — score, no pay)
+  // and 'mechanism' (falsified by the real pay correlation) would have been
+  // lies. See CUE_FAMILY for the argument and for its own checkable law.
+  const FAMILIES = ['reward', 'mechanism', 'predictive', 'milestone']
   assert.ok(s.cues.length > 12, `only ${s.cues.length} voices stamped a cue`)
   for (const c of s.cues) {
     assert.notEqual(c.family, 'unknown', `voice "${c.name}" has no declared cue family`)
-    assert.ok(['reward', 'mechanism', 'predictive'].includes(c.family),
+    assert.ok(FAMILIES.includes(c.family),
       `voice "${c.name}" claims an unrecognised family "${c.family}"`)
   }
   // And the declaration itself must stay a partition, not a wish list.
   for (const [name, fam] of Object.entries(CUE_FAMILY)) {
-    assert.ok(['reward', 'mechanism', 'predictive'].includes(fam),
+    assert.ok(FAMILIES.includes(fam),
       `CUE_FAMILY declares "${name}" as "${fam}", which is not a family`)
   }
 })

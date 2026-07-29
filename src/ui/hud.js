@@ -114,6 +114,10 @@ export class Hud {
       this.rScore.textContent = Math.round(run.floorScore).toLocaleString('en-US')
       this.rQuota.textContent = Math.round(run.quota).toLocaleString('en-US')
       this.rBar.style.width = (run.progress * 100).toFixed(1) + '%'
+      // The stylesheet has always promised a teal bar for a met quota; wire it.
+      // It matters now that the floor keeps playing past the line — the panel
+      // should agree with the floor bar about which side of it you are on.
+      this.rBar.parentElement.classList.toggle('met', !!run.metQuota)
       this.rBalls.textContent = Math.max(0, run.ballsLeft)
       this.rChain.textContent = run.chain > 0 ? `${run.chain} · ×${run.mult.toFixed(1)}` : '—'
       this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')

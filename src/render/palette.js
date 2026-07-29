@@ -182,12 +182,42 @@ export function scoreColour (n, varnish = 1, alpha = 1, t = null) {
     a.l + (b.l - a.l) * f, alpha)
 }
 
-export function trailColour (value, confidence, varnish = 1) {
+// The value AXIS: one position function, one hue line. valueColour and
+// rippleColour both derive from these two, which is what makes the
+// cannot-drift claim below structural rather than wishful — retune the axis
+// here and every rendering of V(s) moves together. (A review pass caught the
+// first draft claiming this while rippleColour duplicated the literals.)
+const valueT = (value) => clamp(value / TRAIL_TOP)
+const valueHue = (t) => 214 - t * 176
+
+/**
+ * The learned-value ramp at a caller-owned alpha. Cold slate → warm gold as
+ * expected value rises. The trails and the nail ripples both draw their hue
+ * from the shared axis above, so the two ways the board paints its beliefs
+ * cannot drift apart.
+ */
+export function valueColour (value, varnish = 1, alpha = 1) {
   const v = clamp(varnish)
-  const t = clamp(value / TRAIL_TOP)
-  // Cold slate → warm gold as expected value rises.
-  const h = 214 - t * 176
-  const s = (0.10 + 0.72 * t) * v
-  const l = 0.42 + 0.30 * t
-  return hsl(h, s, l, 0.15 + 0.55 * clamp(confidence))
+  const t = valueT(value)
+  return hsl(valueHue(t), (0.10 + 0.72 * t) * v, 0.42 + 0.30 * t, alpha)
+}
+
+export function trailColour (value, confidence, varnish = 1) {
+  return valueColour(value, varnish, 0.15 + 0.55 * clamp(confidence))
+}
+
+/**
+ * The nail ripples' rendering of the same axis — the shared `valueHue` line,
+ * with a saturation and lightness floor the trails do not need. Measured on a
+ * live board, the value map at struck nails runs 0–0.2 tokens early in a
+ * session — at the trail ramp's 10% saturation floor a one-pixel ring is
+ * indistinguishable from grey, which un-says the one thing the ring is for.
+ * A trail is a continuous stroke and can afford to whisper; a ring cannot.
+ * Only the floors differ — the hue is still the map's, cold slate at nothing
+ * learned, gold over the funnel, and nobody chooses it.
+ */
+export function rippleColour (value, varnish = 1, alpha = 1) {
+  const v = clamp(varnish)
+  const t = valueT(value)
+  return hsl(valueHue(t), (0.38 + 0.50 * t) * v, 0.55 + 0.20 * t, alpha)
 }

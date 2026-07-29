@@ -15,7 +15,7 @@
 // machine learns, and a monotonically dimming celebration is the opposite of
 // what a flash is for. The measured signal lives in the hue and the needle.)
 
-import { framePalette, trailColour, hsl, scoreColour, scoreTier } from './palette.js'
+import { framePalette, trailColour, rippleColour, hsl, scoreColour, scoreTier } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 
 const TAU = Math.PI * 2
@@ -32,6 +32,7 @@ export class Renderer {
     this.lampPulse = 0         // heso burst on the frame lamps
     this.pulse = 0             // the reward wash — see rewardPulse()
     this.scorePops = []        // score numerals — the RUN's claim, not the ledger's
+    this.ripples = []          // nail strikes, echoed in the value map's colour
     this.bucketFlare = new Map()  // site → 0..1, decays; pure lacquer
     this.bucketTier = new Map()   // site → last score tier, for its rim colour
     this._t = 0
@@ -137,6 +138,7 @@ export class Renderer {
     this.display(ctx, P, machine, dop)
     this.windmills(ctx, P, machine)
     this.nails(ctx, P, machine, dop)
+    this.rippleLayer(ctx, P, dt)
     this.tulips(ctx, P, machine)
     this.attacker(ctx, P, machine)
     this.pockets(ctx, P, machine, dop)
@@ -451,6 +453,57 @@ export class Renderer {
     for (const n of m.parts.lifeNails) {
       ctx.beginPath()
       ctx.arc(this.X(n.x), this.Y(n.y) + sag, r * 2.4, 0, TAU)
+      ctx.stroke()
+    }
+  }
+
+  /**
+   * A nail struck hard enough to ring. Speed-gated by the caller so a graze
+   * stays silent; capped so a storm sheds its oldest rings rather than
+   * growing.
+   */
+  nailRipple (x, y, speed, value) {
+    if (this.ripples.length >= 48) this.ripples.shift()
+    this.ripples.push({
+      x, y,
+      s: Math.max(0, Math.min(1, (speed - 0.3) / 1.2)),
+      v: value, t: 0
+    })
+  }
+
+  /**
+   * The ripples: the trails' vocabulary, applied to the nail field.
+   *
+   * Each ring's HUE is V(s) — what the machine currently believes a ball at
+   * the struck spot is worth, on the same cold-slate-to-gold axis the trails
+   * speak (`rippleColour`, which is that axis with a ring-legible floor). So
+   * the rain of strikes paints the machine's map one ring at a time: blue out
+   * where nothing has been learned, warming to gold over the funnel it values.
+   * Nobody chooses the colours.
+   *
+   * The ALPHA is the strike's energy, fading on the ring's own clock. It is
+   * deliberately NOT the model's confidence — that duty belongs to the trails,
+   * and a ring's job is to mark that a strike happened, which is true at every
+   * confidence.
+   *
+   * Pure lacquer. The trail already carries the value information; the ring
+   * is celebration, so at varnish 0 there are no rings at all.
+   */
+  rippleLayer (ctx, P, dt) {
+    if (P.varnish <= 0.01) { this.ripples.length = 0; return }
+    const LIFE = 0.38
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i]
+      r.t += dt
+      if (r.t > LIFE) { this.ripples.splice(i, 1); continue }
+      const k = r.t / LIFE
+      const R = this.S(0.0035 + (0.0055 + 0.0075 * r.s) * k)
+      const a = (1 - k) * (1 - k) * (0.30 + 0.45 * r.s) * P.varnish
+      if (a < 0.02) continue
+      ctx.strokeStyle = rippleColour(r.v, P.varnish, a)
+      ctx.lineWidth = Math.max(1, this.S(0.0018) * (1.5 - k))
+      ctx.beginPath()
+      ctx.arc(this.X(r.x), this.Y(r.y), R, 0, TAU)
       ctx.stroke()
     }
   }

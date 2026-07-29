@@ -406,6 +406,15 @@ The wiring is done:
 
 - **`src/audio/synth.js` — `CUE_FAMILY`** declares every one of the 19 voices as `reward`,
   `mechanism`, or `predictive`. That declaration is a falsifiable claim, written down.
+
+  *(2026-07-28, Builder 3, later the same day: the taxonomy gained a fourth family —
+  `milestone` — when the quota fanfare arrived. It is a voice about the RUN's printed
+  scoreboard rather than the machine's ledger, and neither existing pole could hold it
+  honestly: `reward` would be falsified the first time a warp crossing meets the quota (a warp
+  scores but pays no ball), `mechanism` falsified the other way, because most scoring pockets
+  DO pay and the correlation is real. The family exists so `cue-contingency.mjs` can EXEMPT it
+  knowingly rather than misfile it, and it carries its own checkable law: a milestone voice may
+  only ever sound in the frame its threshold event fired. One member so far.)*
 - **`Synth.mark()` and `synth.cues`** — a bounded ring buffer stamping every voice that actually
   sounded, with its time and its declared family. **Nothing reads it.** Suppression by the impact
   budget or the varnish gate is deliberately *not* recorded (a cue nobody heard conditions
@@ -610,7 +619,8 @@ measured arrival spread so a starved mouth is still worth drafting.
 **The floor's decision** (operator's request): meeting the quota opens PUSH ON / BANK rather than
 ending the floor. Surplus buys parts by doubling; banked balls ride into the next floor's tray.
 The old leftover bonus is gone — it paid score for the same balls that carried forward, so there
-was no trade to make.
+was no trade to make. *(Superseded within the day: the modal described here is gone and the
+decision is made live — see "Three more, the next day" below.)*
 
 **A local high-score record**: the best run on the title screen, a RECORDS screen with the top ten
 runs in full (cabinet, floor, parts fitted, longest chain, date), per-cabinet bests kept apart
@@ -632,6 +642,42 @@ reverse.
 Both `frame()` and `tick()` now refuse a non-positive step. Two lessons worth keeping: a
 plausible-looking symptom that matches a known mechanic is the hardest kind to see past, and the
 harness that verifies the game is part of the game's attack surface.
+
+## Three more, the next day (2026-07-28, later)
+
+**The decision went live.** The operator's ruling: the flow of play must not stop at the quota.
+The 'decision' status, `pushOn()`, and the modal `#decide` screen are all GONE — `bank()` is now
+callable while the floor is still playing (`metQuota` is the gate), and the shell's `#floorbar`
+slides up at the stage's foot with both sides of the trade printed live: the next part's price on
+the bar, the capped carry on the button. Pushing on is continuing to fire; there is nothing to
+click. This turned out to be the honest shape, not just the requested one — the modal committed
+you to PUSH ON once, while the live door makes every ball fired past the quota a re-making of the
+choice. Balls in flight when the button lands resolve for nothing (the tray already paid for
+them); that is timing being part of the choice, and it is documented at `Run#bank`. The sim
+tool's push policies are now consulted EVERY STEP, so `thrifty` can change its mind as the tray
+drains — which is what the player it models does. Re-measured: crossover floor 6, floor-1 clear
+79% at n=24 (70% at n=10 before — noise, and the policy cannot touch pre-quota clears), shape
+intact. The stage reserves the bar's height as padding and `resize()` subtracts padding from
+`clientHeight` — clientHeight INCLUDES padding, and the first draft fitted the canvas into room
+the bar was standing in.
+
+**Nail ripples.** Strikes above 0.30 m/s ring — an expanding stroked circle whose HUE is the
+value map at the struck spot, through `rippleColour` in palette.js: the trails' exact hue line
+(cold slate → gold) with a saturation/lightness floor the trails do not need. Measured live, V at
+struck nails runs 0–0.2 tokens early in a session, and at the trail ramp's 10% saturation floor a
+one-pixel ring is indistinguishable from grey — the floor is a legibility correction on the same
+axis, not a second vocabulary. Alpha is strike energy on the ring's own 0.38 s clock,
+deliberately NOT model confidence (that duty stays with the trails). Pool capped at 48,
+oldest-shed; pure lacquer, pool flushed at varnish 0.
+
+**The quota fanfare.** `synth.quota()` — a major arpeggio into a held octave, ~1.5 s, inside
+Dixon's win-jingle band. An ascending contour is legal here and nowhere else in the celebration
+vocabulary because it announces a verdict already sealed; the cut folklore was rising pitch as
+anticipation toward something undecided, and this climbs toward nothing — the bar was full before
+the first note. At varnish 0: the fact, stated once. It carries the new `milestone` family (see
+Builder 2's section above, and the argument in `CUE_FAMILY` itself). `floorCleared` dropped from
+`jackpot(0.6)` to a koatari — it is the door closing behind you, not the news; the news already
+played.
 
 ## Left undone
 

@@ -90,6 +90,7 @@ function newSession () {
   dop = new Dopamine(BOARD.w, BOARD.h)
   machine.dial = 0.20
   renderer.trails.clear()
+  renderer.ripples.length = 0
 }
 
 // ── the run ────────────────────────────────────────────────────────────────
@@ -128,11 +129,12 @@ function buildFloor () {
   renderer.trails.clear()
   renderer.bucketFlare.clear()
   renderer.scorePops.length = 0
+  renderer.ripples.length = 0
 }
 
 // ── screens ────────────────────────────────────────────────────────────────
 
-const SCREENS = ['title', 'options', 'about', 'cabinets', 'backroom', 'runover', 'records', 'decide']
+const SCREENS = ['title', 'options', 'about', 'cabinets', 'backroom', 'runover', 'records']
 
 function go (name) {
   state.screen = name
@@ -155,6 +157,15 @@ function go (name) {
     machine.cancelCharge()
     firingHeld = false
   }
+  if (name !== 'play') {
+    // The floor bar is a function of the run's state, but its sync only runs
+    // inside the play tick — leaving the screen would otherwise strand the
+    // stage's reserved padding, and the next buildFloor would fit the canvas
+    // into room the bar is no longer standing in.
+    $('#play').classList.remove('quota')
+    $('#floorbar').classList.remove('on')
+    fbCache = ''
+  }
   save()
 }
 
@@ -171,11 +182,10 @@ document.addEventListener('click', (e) => {
 $('#toTitle').addEventListener('click', () => go('title'))
 $('#resumeRun').addEventListener('click', () => {
   synth.start().then(() => synth.click())
-  // Resume onto whichever screen the run is actually waiting on. Sending a run
-  // that is mid-decision back to the play screen would strand it: the launcher
-  // is stopped and the only thing that can restart it is a choice on a screen
-  // the player is no longer looking at.
-  if (run.status === 'cleared') { syncBackroom(); go('backroom') } else if (run.status === 'decision') { syncDecide(); go('decide') } else go('play')
+  // Resume onto whichever screen the run is actually waiting on. A run whose
+  // quota is met but unbanked resumes straight to the board — the floor bar
+  // reappears with it, because the bar is a function of the run's state.
+  if (run.status === 'cleared') { syncBackroom(); go('backroom') } else go('play')
 })
 
 // ── the cabinet select ─────────────────────────────────────────────────────
@@ -289,57 +299,72 @@ function syncCabinets () {
   }
 }
 
-// ── the decision ───────────────────────────────────────────────────────────
+// ── the floor bar ──────────────────────────────────────────────────────────
 //
-// The floor's real question. Both options are stated with their actual numbers
-// rather than their flavour, because the whole point is that it is a genuine
-// trade and a player cannot weigh one they have to guess at.
+// The door out of a cleared floor. The floor does not pause when the quota is
+// met — the operator's ruling, and the honest one: pushing on is a thing the
+// player does by continuing to fire, so the only control that needs to exist
+// is the one that ends the floor. Both sides of the trade stay printed while
+// it is being made: the bar's text is the push incentive (the next part's
+// price, live) and the button is the bank incentive (the carry, live and
+// already capped — a player banking 400 balls must never be quietly given
+// 160). Numbers a player cannot weigh are not a trade.
 
-function syncDecide (ev) {
+let fbCache = ''
+function syncFloorbar () {
+  const on = !!(run && run.status === 'playing' && run.metQuota && state.screen === 'play')
+  const play = $('#play')
+  if (play.classList.contains('quota') !== on) {
+    play.classList.toggle('quota', on)
+    $('#floorbar').classList.toggle('on', on)
+    // The stage just changed height under the canvas — refit it now, not at
+    // the next window resize.
+    resize()
+  }
+  if (!on) { fbCache = ''; return }
+
   const r = run
-  $('#dcHead').textContent = r.floor > FLOORS
-    ? `OVERTIME ${r.floor - FLOORS} — QUOTA MET`
-    : `FLOOR ${r.floor} — QUOTA MET`
-  $('#dcScore').textContent = fmt(r.floorScore)
-  $('#dcSub').textContent =
-    `${fmt(r.floorScore)} against ${fmt(r.quota)}, with ${r.ballsLeft} ball` +
-    `${r.ballsLeft === 1 ? '' : 's'} still in the tray. ` +
-    `Next floor wants ${fmt(nextQuota())}.`
-
+  const carry = Math.min(Math.max(0, r.ballsLeft), BALLS_BASE)
+  const picks = r.picksEarned()
   const nextAt = r.nextPickAt()
-  $('#dcPushBl').textContent = nextAt
-    ? `${r.picksEarned()} part${r.picksEarned() === 1 ? '' : 's'} so far — ` +
-      `${fmt(nextAt - r.floorScore)} more score buys another.`
-    : `${r.picksEarned()} parts — the surplus ceiling is reached.`
-  // State the number the next floor will actually open with, not the delta.
-  // The first draft said "carried into a floor that would otherwise start with
-  // 7 fewer", which is circular — it defines the gain in terms of itself.
-  // The carry is capped at one base tray (see Run#bank), and the cap has to be
-  // visible here or a player banking 400 balls would be quietly given 160.
-  const base = BALLS_BASE + r.loadout.ballBonus
-  const carry = Math.min(r.ballsLeft, BALLS_BASE)
-  $('#dcBankBl').textContent =
-    `${r.picksEarned()} part${r.picksEarned() === 1 ? '' : 's'}, and the next floor opens with ` +
-    `${base + carry} balls instead of ${base}` +
-    `${carry < r.ballsLeft ? ` (the carry caps at ${BALLS_BASE})` : ''}.`
+  // floorScore is in the key: the push price is quoted against it, and balls
+  // still in flight keep scoring while the launcher rests.
+  const key = `${r.floor}|${carry}|${picks}|${nextAt}|${r.ballsLeft}|${r.floorScore}`
+  if (key === fbCache) return
+  fbCache = key
+
+  $('#fbHead').textContent =
+    `${r.floor > FLOORS ? `OVERTIME ${r.floor - FLOORS}` : `FLOOR ${r.floor}`} — QUOTA MET · ` +
+    `${picks} PART${picks === 1 ? '' : 'S'} EARNED`
+  $('#fbSub').textContent = nextAt
+    ? `push on — ${fmt(nextAt - r.floorScore)} more score buys another part`
+    : 'surplus ceiling reached — every ball from here is score alone'
+  const btn = $('#fbBank')
+  btn.firstChild.textContent = `BANK ${carry} ▸ NEXT FLOOR`
+  $('#fbNote').textContent =
+    `through the back room` +
+    `${carry < r.ballsLeft ? ` · the carry caps at ${BALLS_BASE}` : ''}`
 }
 
-$('#dcPush').addEventListener('click', () => {
+$('#fbBank').addEventListener('click', () => {
+  // Guarded even though the off-state bar is now visibility-hidden: defence
+  // in depth costs one line, and this handler once dereferenced a null run
+  // when Tab+Enter reached the invisible button in FREE PLAY (review
+  // finding). The charge is cancelled only AFTER the gate agrees — a refused
+  // bank must not cost the player their pull.
+  if (!run || run.status !== 'playing' || !run.metQuota) return
   synth.click()
-  run.pushOn()
-  drainRun()
-  go('play')
-  banner('PUSH ON', 'every ball from here is surplus — and surplus buys parts')
-})
-$('#dcBank').addEventListener('click', () => {
-  synth.click()
-  const n = run.ballsLeft
-  run.bank()
   // bank() clears the floor, which emits 'draft'; drainRun's handler is what
   // navigates to the back room. Doing it here as well would be two places
-  // deciding the same thing, and they would drift.
-  drainRun()
-  banner(`${n} BANKED`, 'they ride along to the next floor')
+  // deciding the same thing, and they would drift. No banner: the back room's
+  // own sub-line states the banked count, and a banner set here lands on a
+  // screen that is already hidden (review finding — it was dead UI on every
+  // single bank, inherited from the old modal and kept by mistake).
+  if (run.bank()) {
+    machine.cancelCharge()
+    firingHeld = false
+    drainRun()
+  }
 })
 
 // ── the back room ──────────────────────────────────────────────────────────
@@ -671,7 +696,12 @@ function banner (text, sub = '') {
 
 function resize () {
   const stage = $('#stage')
-  const w = stage.clientWidth, h = stage.clientHeight
+  // clientHeight INCLUDES padding, and the floor bar reserves its space as
+  // stage padding (the `.quota` rule) — subtract it or the canvas is fitted
+  // into room the bar is standing in.
+  const cs = getComputedStyle(stage)
+  const w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+  const h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
   if (!w || !h) return
   const aspect = BOARD.w / BOARD.h
   let cw = Math.min(w - 16, (h - 16) * aspect)
@@ -765,6 +795,12 @@ function tick (dt, t = lastT) {
   synth.updateRain(impactsThisFrame / dt, state.varnish)
   synth.updateJam(machine.foulHeat, state.varnish)
 
+  // The floor bar syncs BEFORE the draw: on the frame it toggles, it resizes
+  // the canvas, and assigning canvas.width resets the bitmap — synced after
+  // the draw, the celebration frame painted a moment earlier was wiped and
+  // the compositor showed one black frame at the exact quota moment. (Review
+  // finding, confirmed: 2d {alpha:false} clears to opaque black.)
+  syncFloorbar()
   renderer.draw(machine, dop, state.varnish, dt, run)
   hud.update(machine, dop, state.varnish, run)
   updateTopbar()
@@ -807,23 +843,29 @@ function drainRun () {
       }
 
       case 'quotaMet':
-        // The launcher stops and the board freezes here. Freezing rather than
-        // letting play continue behind the choice is deliberate: balls in
-        // flight are still worth points, and a decision made while the number
-        // you are deciding about is still moving is not a decision.
-        machine.cancelCharge()
-        firingHeld = false
+        // The floor does NOT stop. The celebration lands over live play and
+        // the door out slides up at the stage's foot (syncFloorbar) — an
+        // earlier build froze the board behind a modal here, and the operator
+        // ruled the flow must hold. The fanfare is the quota's own voice, not
+        // a borrowed koatari: this is the run's scoreboard speaking, and it
+        // gets the one sound in the game that belongs to it.
         renderer.kick(0.5)
         renderer.lampBurst(1)
-        synth.koatari(state.varnish)
-        syncDecide(ev)
-        go('decide')
+        synth.quota(state.varnish)
+        banner('QUOTA MET', 'the floor is still yours — push for parts, or take the door below')
         break
 
       case 'floorCleared':
-        renderer.kick(0.6)
-        renderer.lampBurst(1)
-        synth.jackpot(0.6, state.varnish)
+        // Quieter than the quota's fanfare, which by now has already played —
+        // this is the door actually closing behind you, not the news. Its own
+        // milestone voice, NOT a borrowed koatari: floorCleared is the run's
+        // scoreboard speaking and banking pays no balls, so a reward-family
+        // cue here stamps a Δp=0 'reward' into the log once per floor and
+        // poisons the conditioning instrument (review finding — the old
+        // jackpot/koatari borrowings were exactly that misfile).
+        renderer.kick(0.4)
+        renderer.lampBurst(0.8)
+        synth.descend(state.varnish)
         break
 
       case 'draft':
@@ -832,6 +874,13 @@ function drainRun () {
         // fires, which is why it no longer cuts the player off mid-floor.
         machine.cancelCharge()
         firingHeld = false
+        // The descent must not survive the floor it was falling for. Banking
+        // mid-jackpot is ordinary now — the door stands open through the whole
+        // party — and this machine is about to be discarded, so its jackpotEnd
+        // can never fire. (Review finding: a 200 s Shepard glissando kept
+        // falling under the entire draft and into the next floor.)
+        synth.shepardStop()
+        if (machine.inJackpot || machine.koatari) synth.gate(false, state.varnish)
         syncBackroom()
         go('backroom')
         break
@@ -862,6 +911,13 @@ function handleEvents (events) {
       case 'hit':
         impactsThisFrame++
         hits.push(ev)
+        // A nail struck hard enough to ring ripples in the colour of the
+        // value map at that spot — the trails' vocabulary applied to the
+        // field. Speed-gated here so the rain's grazes stay quiet; the pool
+        // caps itself. See Renderer#rippleLayer.
+        if (ev.surface === 'nail' && ev.speed > 0.30) {
+          renderer.nailRipple(ev.x, ev.y, ev.speed, dop.valueAt(ev.x, ev.y))
+        }
         break
 
       case 'launch':

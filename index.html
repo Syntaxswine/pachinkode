@@ -108,6 +108,39 @@
   #topbar b { color: var(--ink); font-weight: 500; }
   #topbar .esc { pointer-events: auto; cursor: pointer; color: var(--faint); }
   #topbar .esc:hover { color: var(--hot); }
+  /* ── the floor bar ──
+     The door out of a cleared floor. It slides up at the stage's foot when the
+     quota is met and the floor KEEPS PLAYING behind it — pushing on is a thing
+     the player does with their hands, not a menu option, so the only control
+     here is the one that ends the floor. The stage reserves its height (the
+     .quota padding below) so it never sits on the launcher. */
+  /* Hidden means GONE: visibility (not just opacity) leaves the tab order,
+     because an invisible button Tab can reach is still an input surface — the
+     old #decide modal got this for free from display:none, and the bar must
+     not regress it. Pointer-events stay off the container even when on, so
+     the info text never steals a click from a canvas it may overlap on a
+     cramped landscape phone; only the button itself is interactive. */
+  #floorbar { position: absolute; left: 50%; bottom: 6px; transform: translate(-50%, 160%);
+              display: flex; align-items: center; gap: 16px; padding: 8px 9px 8px 16px;
+              background: rgba(16,21,27,.94); border: 1px solid var(--faint);
+              transition: transform .3s ease, opacity .3s, visibility 0s .3s; opacity: 0;
+              visibility: hidden; pointer-events: none; white-space: nowrap;
+              max-width: calc(100% - 12px); }
+  #floorbar.on { transform: translate(-50%, 0); opacity: 1; visibility: visible;
+              transition: transform .3s ease, opacity .3s; }
+  #floorbar.on button { pointer-events: auto; }
+  #floorbar .fbi { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  #floorbar .fbh { color: #63d5c4; letter-spacing: .16em; font-size: 10px; }
+  #floorbar .fbs { color: var(--dim); font-size: 9.5px; letter-spacing: .04em;
+                   overflow: hidden; text-overflow: ellipsis; }
+  #floorbar button { background: transparent; border: 1px solid var(--hot); color: var(--hot);
+                     padding: 8px 15px; letter-spacing: .13em; font-size: 11px;
+                     text-align: left; transition: .13s; }
+  #floorbar button:hover, #floorbar button:focus-visible { background: #241d12; color: #fff;
+                     outline: none; }
+  #floorbar button small { display: block; color: var(--dim); font-size: 9px;
+                     letter-spacing: .07em; margin-top: 3px; }
+  #play.quota #stage { padding-bottom: 58px; }
   #banner { position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
             text-align: center; pointer-events: none; letter-spacing: .3em;
             font-size: 22px; color: var(--hot); opacity: 0; transition: opacity .25s; }
@@ -226,31 +259,6 @@
     </div>
 
     <div class="backrow"><button data-go="title">BACK</button></div>
-  </div>
-</section>
-
-<!-- ── the decision: push on, or bank the tray ────────────────────────────── -->
-<section id="decide" class="screen">
-  <div class="sheet" style="text-align:center">
-    <h2 id="dcHead">THE QUOTA IS MET</h2>
-    <div class="bigscore" id="dcScore">0</div>
-    <p class="note" id="dcSub" style="margin:12px auto 22px;max-width:60ch"></p>
-    <div class="offers" style="max-width:560px;margin:0 auto">
-      <button class="offer" id="dcPush">
-        <span class="nm">PUSH ON</span>
-        <span class="jp2">続行</span>
-        <span class="bl" id="dcPushBl"></span>
-        <span class="dt">Keep firing into a floor you have already beaten. Surplus score buys
-          parts — double the quota for one more, four times for two, eight for three.</span>
-      </button>
-      <button class="offer" id="dcBank">
-        <span class="nm">BANK THE TRAY</span>
-        <span class="jp2">温存</span>
-        <span class="bl" id="dcBankBl"></span>
-        <span class="dt">Stop now and carry every remaining ball into the next floor, on top of
-          its own allowance. Parts compound; so does a margin for error.</span>
-      </button>
-    </div>
   </div>
 </section>
 
@@ -415,6 +423,13 @@
       <span id="tState"></span>
     </div>
     <div id="banner"><span id="bannerText"></span><small id="bannerSub"></small></div>
+    <div id="floorbar">
+      <div class="fbi">
+        <span class="fbh" id="fbHead">QUOTA MET</span>
+        <span class="fbs" id="fbSub"></span>
+      </div>
+      <button id="fbBank">BANK 0 ▸ NEXT FLOOR<small id="fbNote"></small></button>
+    </div>
   </div>
   <aside id="panel"></aside>
 </section>

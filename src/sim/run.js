@@ -50,14 +50,16 @@
 //
 //     node tools/run-sim.js --curve
 //
-// prints all of it. Measured at the current constants (10 runs, thrifty push):
+// prints all of it. Measured at the current constants (24 runs per policy,
+// 2026-07-28, after the decision went live — see meetQuota below):
 //
-//     floor  1   69% of the tray to meet the quota,  70% of runs clear it
-//     floor  2  205%   ← the real wall, and it is not floor 1
-//     floor  3  155%
-//     floor  4   46%
-//     floor  6   57%
-//     floor  7    9%   ← crossover
+//     floor  1   76% of the tray to meet the quota,  79% of runs clear it
+//     floor  2  124%   ← the real wall, and it is not floor 1
+//     floor  3  119%
+//     floor  4   75%
+//     floor  5   93%
+//     floor  6   37%   ← crossover
+//     floor  7   15%
 //     floor 12    1%
 //
 // Floors 2–3 costing MORE than a full tray is not a bug: BALL RETURN refunds
@@ -70,13 +72,26 @@
 // below floor 4 the early game has stopped being hard. Both are regressions
 // and both are visible in one command.
 //
-// One caution for whoever retunes: the cost column measures launches spent
-// when the QUOTA WAS MET (`launchedAtQuota`), not when the floor ended. Once
-// PUSH ON existed, cost-at-floor-end measured the player's policy rather than
-// the board's difficulty — a player who pushes spends the whole tray by
-// definition. Measured across all three push policies the clear rate and
-// crossover are identical, which is the check that the metric is now reading
-// the right thing.
+// Two cautions for whoever retunes:
+//
+// 1. The cost column measures launches spent when the QUOTA WAS MET
+//    (`launchedAtQuota`) against the tray the floor OPENED with, carried
+//    balls included — cost-at-floor-end measured the player's policy rather
+//    than the board's difficulty. The validity check is that clear rate and
+//    crossover must be IDENTICAL across `--push bank|push|thrifty`, because
+//    the decision happens strictly after the quota falls. Re-verified under
+//    the live door: 79% and floor 6, on all three policies.
+//
+// 2. The cost PERCENTAGES are policy-dependent even though the difficulty is
+//    not: a policy that banks more carries more, and the carry inflates the
+//    denominator (floor 2 reads 124% under thrifty, 151% under always-push).
+//    An earlier table here said 205% for floor 2 — measured under the old
+//    MODAL decision, where thrifty answered once, chose push, and ran the
+//    tray dry with nothing carried. Per-step thrifty banks the residual after
+//    buying the reachable part, an outcome the modal made impossible, so
+//    next-floor trays are systematically bigger. A review pass caught this
+//    table describing a tool that no longer existed. Compare cost columns
+//    only within one policy, and re-measure after touching the policies.
 
 import { resolveLoadout, drawOffers } from './loadout.js'
 import { makeRng } from './rng.js'
@@ -287,7 +302,7 @@ export class Run {
     this.bestChain = 0
     this.chainT = 0
 
-    this.status = 'playing'     // playing | decision | cleared | failed
+    this.status = 'playing'     // playing | cleared | failed
     this.cleared = false        // has floor 12 been beaten? banked, permanent
     this.metQuota = false       // this floor's quota has been met at least once
     this.banked = 0             // balls carried into the next floor
@@ -345,9 +360,9 @@ export class Run {
     P.base += flat
     P.fromChain += n - flat
     this.emit('score', { n, kind, site, x, y, chain: this.chain, mult: this.mult, total: this.floorScore })
-    // Meeting the quota does not end the floor. It opens a decision — see
-    // meetQuota() — and only the first time, because the score keeps climbing
-    // afterwards if the player chooses to push on.
+    // Meeting the quota does not end the floor, and does not even pause it —
+    // see meetQuota(). It fires only the first time; the score keeps climbing
+    // afterwards for as long as the player keeps feeding the launcher.
     if (this.floorScore >= this.quota && !this.metQuota) this.meetQuota()
     return n
   }
@@ -367,21 +382,32 @@ export class Run {
   // floor 6; a player who always pushes has no margin the first time the board
   // does not cooperate.
   //
+  // ── the decision is made LIVE, at the launcher ──
+  //
+  // An earlier build froze the game here: a 'decision' status, a modal screen,
+  // two buttons. The operator's ruling was that the flow of play must not
+  // stop — and the ruling turned out to be the more honest mechanic, because
+  // the freeze had quietly deleted half the choice. Pushing on is not a menu
+  // option; it is a thing a player DOES, by continuing to fire. So meeting the
+  // quota changes nothing about the floor's motion: the launcher stays hot,
+  // the chain keeps running, and `bank()` becomes callable — the one new
+  // affordance, a door that is now open. A player who keeps shooting has
+  // chosen PUSH ON with their hands; a player who takes the door has banked.
+  //
   // This is also why the old leftover bonus is GONE. It paid score for unspent
   // balls, which meant balls were worth score AND balls at the same time —
   // there was no trade, just a number that went up either way. A ball is now
   // worth exactly one of the two things, and the player picks which.
 
-  /** The quota is met. Stop the launcher and ask. */
+  /** The quota is met. The floor stays live; the door out is now open. */
   meetQuota () {
     this.metQuota = true
-    // What the quota COST, frozen here. Once the decision exists, launches
-    // spent after this point are a policy choice rather than a measure of how
-    // hard the floor was — a player who pushes on spends the whole tray by
-    // definition, so cost-at-floor-end stopped meaning anything the moment
-    // PUSH ON existed. tools/run-sim.js reads this instead.
+    // What the quota COST, frozen here. Launches spent after this point are a
+    // policy choice rather than a measure of how hard the floor was — a player
+    // who pushes on spends the whole tray by definition, so cost-at-floor-end
+    // stopped meaning anything the moment pushing on existed.
+    // tools/run-sim.js reads this instead.
     this.launchedAtQuota = this.launched
-    this.status = 'decision'
     this.emit('quotaMet', {
       floor: this.floor,
       score: this.floorScore,
@@ -421,16 +447,15 @@ export class Run {
     return Math.ceil(this.quota * Math.pow(2, n + 1))
   }
 
-  /** Keep firing into a floor already won. Surplus buys parts. */
-  pushOn () {
-    if (this.status !== 'decision') return false
-    this.status = 'playing'
-    this.emit('pushOn', { floor: this.floor, ballsLeft: this.ballsLeft })
-    return true
-  }
-
   /**
    * Stop now; the rest of the tray carries into the next floor.
+   *
+   * Callable at any moment after the quota is met, while the floor is still
+   * live — that is the whole decision now. Balls in flight when the door is
+   * taken resolve for nothing: they were launched, so the tray already paid
+   * for them, and a score after 'cleared' lands on a closed book. That is not
+   * a trap, it is the timing being part of the choice — the balls are visible,
+   * and a player who cares waits half a second for them to land.
    *
    * ── WHY THE CARRY IS CAPPED ─────────────────────────────────────────────
    *
@@ -446,7 +471,7 @@ export class Run {
    * floor's clock is enormous) while keeping a floor a thing that ends.
    */
   bank () {
-    if (this.status !== 'decision') return false
+    if (this.status !== 'playing' || !this.metQuota) return false
     this.banked = Math.min(Math.max(0, this.ballsLeft), BALLS_BASE)
     this.clearFloor()
     return true
