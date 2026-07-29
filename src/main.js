@@ -98,6 +98,8 @@ function newSession () {
   machine.dial = 0.20
   renderer.trails.clear()
   renderer.ripples.length = 0
+  renderer.routeLog.length = 0
+  renderer.fades.length = 0
 }
 
 // ── the run ────────────────────────────────────────────────────────────────
@@ -137,6 +139,9 @@ function buildFloor () {
   renderer.bucketFlare.clear()
   renderer.scorePops.length = 0
   renderer.ripples.length = 0
+  // Routes describe a board; this is a new board.
+  renderer.routeLog.length = 0
+  renderer.fades.length = 0
 }
 
 // ── screens ────────────────────────────────────────────────────────────────
@@ -772,6 +777,17 @@ addEventListener('keydown', (e) => {
   }
   if (e.key === 'ArrowUp') { setDial(machine.dial + (e.shiftKey ? 0.002 : 0.02)); e.preventDefault() }
   if (e.key === 'ArrowDown') { setDial(machine.dial - (e.shiftKey ? 0.002 : 0.02)); e.preventDefault() }
+  if (e.key === 'r' || e.key === 'R') {
+    // ROUTE MODE — the recorder's data, rendered (operator's design). The
+    // recording is always on; this key only changes what is drawn, so it is
+    // free to toggle mid-flight and safe to leave on: an instrument, not a
+    // mode of play.
+    renderer.testMode = !renderer.testMode
+    banner(renderer.testMode ? 'ROUTE MODE' : 'ROUTE MODE OFF',
+      renderer.testMode
+        ? 'every path, launcher to pocket — the colour was always there, just invisible'
+        : 'the stories keep recording; press R to see them again')
+  }
   if (e.key === 'v' || e.key === 'V') {
     state.varnish = state.varnish > 0.5 ? 0 : 1
     $('#vVarnish').value = state.varnish * 100
@@ -1369,7 +1385,17 @@ globalThis.__pachinkode = {
   tick (n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) tick(dt, (lastT += dt)) },
   startRun,
   /** Rebuild the board from the run's current loadout — see buildFloor(). */
-  buildFloor () { run && buildFloor() }
+  buildFloor () { run && buildFloor() },
+  /**
+   * The route recorder's data: every live ball's full path so far, and the
+   * last ROUTE_LOG_MAX completed stories, points of {x, y, v, c} — position
+   * plus what the value map believed there, at that moment. Always recording;
+   * the R key merely renders it. This is the read-side the testing software
+   * will build on.
+   */
+  routes () {
+    return { live: [...renderer.trails.values()], done: [...renderer.routeLog] }
+  }
 }
 
 requestAnimationFrame(frame)

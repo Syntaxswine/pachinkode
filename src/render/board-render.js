@@ -15,11 +15,23 @@
 // machine learns, and a monotonically dimming celebration is the opposite of
 // what a flash is for. The measured signal lives in the hue and the needle.)
 
-import { framePalette, trailColour, rippleColour, hsl, scoreColour, scoreTier } from './palette.js'
+import { framePalette, trailColour, rippleColour, valueColour, hsl, scoreColour, scoreTier } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 
 const TAU = Math.PI * 2
 const TRAIL_MAX = 26
+
+// ── the route recorder (operator's design, 2026-07-28) ──────────────────────
+// Every ball's COMPLETE path is recorded from launcher to pocket — invisibly.
+// The playing game renders only the fading tail it always has; the full story
+// lives in the data, bounded by the caps below, and becomes visible in ROUTE
+// MODE (the R key) or readable by a harness via __pachinkode.routes(). "The
+// colour just goes invisible — it's still there, just in the data."
+const ROUTE_MAX_POINTS = 2400   // ~40 s of flight at 60 fps; a stuck ball stops growing
+const ROUTE_LOG_MAX = 300       // completed routes kept for the harness
+const ROUTE_DRAW_MAX = 60       // newest completed routes drawn in route mode
+const ROUTE_CHUNK = 90          // points per colour chunk — per-segment colour at
+                                // full length would be ~70k strokes a frame
 
 export class Renderer {
   constructor (canvas) {
@@ -33,6 +45,9 @@ export class Renderer {
     this.pulse = 0             // the reward wash — see rewardPulse()
     this.scorePops = []        // score numerals — the RUN's claim, not the ledger's
     this.ripples = []          // nail strikes, echoed in the value map's colour
+    this.routeLog = []         // completed full routes — the invisible record
+    this.fades = []            // dying visible tails, shrinking out
+    this.testMode = false      // ROUTE MODE: render what was only recorded
     this.bucketFlare = new Map()  // site → 0..1, decays; pure lacquer
     this.bucketTier = new Map()   // site → last score tier, for its rim colour
     this._t = 0
@@ -157,6 +172,7 @@ export class Renderer {
       if (n <= 0) this.bucketFlare.delete(k); else this.bucketFlare.set(k, n)
     }
     this.buckets(ctx, P, machine)
+    this.routeLayer(ctx, P)
     this.trailsAndBalls(ctx, P, machine, dop, dt)
     this.flashLayer(ctx, P, dt)
     this.lamps(ctx, P, machine, dop, dt)
@@ -782,28 +798,91 @@ export class Renderer {
     }
   }
 
+  /**
+   * ROUTE MODE — the recorded stories, rendered.
+   *
+   * An INSTRUMENT, not lacquer: it draws at every varnish (valueColour
+   * collapses to luminance at 0, so the data survives the switch the way all
+   * information here does), and it exists for testing — the operator's
+   * design: the full route is always in the data, and this is the mode that
+   * lets you see it. Completed routes render faint, live ones brighter, and
+   * every route ends in a dot where the ball died. Colour is chunked rather
+   * than per-segment: sixty full routes at per-segment colour is ~70k
+   * strokes a frame, and an instrument that halves the frame rate changes
+   * what it is measuring.
+   *
+   * A warped ball's story arrives in two routes — the warp consumes one ball
+   * id and spawns another. The gap between them IS the warp.
+   */
+  routeLayer (ctx, P) {
+    if (!this.testMode) return
+    ctx.save()
+    ctx.lineCap = 'round'
+    const route = (pts, alpha, width) => {
+      if (pts.length < 2) return
+      for (let s = 0; s < pts.length - 1; s += ROUTE_CHUNK) {
+        const end = Math.min(pts.length - 1, s + ROUTE_CHUNK)
+        const mid = pts[(s + end) >> 1]
+        ctx.strokeStyle = valueColour(mid.v, P.varnish, alpha * (0.35 + 0.65 * mid.c))
+        ctx.lineWidth = width
+        ctx.beginPath()
+        ctx.moveTo(this.X(pts[s].x), this.Y(pts[s].y))
+        for (let i = s + 1; i <= end; i++) ctx.lineTo(this.X(pts[i].x), this.Y(pts[i].y))
+        ctx.stroke()
+      }
+      const last = pts[pts.length - 1]
+      ctx.fillStyle = valueColour(last.v, P.varnish, alpha)
+      ctx.beginPath()
+      ctx.arc(this.X(last.x), this.Y(last.y), Math.max(1.5, this.S(0.0022)), 0, TAU)
+      ctx.fill()
+    }
+    const from = Math.max(0, this.routeLog.length - ROUTE_DRAW_MAX)
+    for (let i = from; i < this.routeLog.length; i++) {
+      route(this.routeLog[i], 0.22, Math.max(0.6, this.S(0.0012)))
+    }
+    for (const tr of this.trails.values()) route(tr, 0.55, Math.max(1, this.S(0.002)))
+    ctx.restore()
+  }
+
   trailsAndBalls (ctx, P, m, dop, dt) {
     const live = new Set()
     for (const b of m.world.balls) {
       live.add(b.id)
       let tr = this.trails.get(b.id)
       if (!tr) this.trails.set(b.id, tr = [])
-      tr.push({ x: b.x, y: b.y, v: dop.valueAt(b.x, b.y), c: dop.confidenceAt(b.x, b.y) })
-      if (tr.length > TRAIL_MAX) tr.shift()
+      // The FULL route accumulates — recording is always on, rendering is
+      // not. The visible tail below is a windowed view of the same array.
+      if (tr.length < ROUTE_MAX_POINTS) {
+        tr.push({ x: b.x, y: b.y, v: dop.valueAt(b.x, b.y), c: dop.confidenceAt(b.x, b.y) })
+      }
     }
     for (const id of [...this.trails.keys()]) {
       if (!live.has(id)) {
+        // The ball is gone: its complete story goes to the log, and only its
+        // visible tail stays behind to fade out.
         const tr = this.trails.get(id)
-        tr.shift(); tr.shift()
-        if (tr.length < 2) this.trails.delete(id)
+        this.trails.delete(id)
+        this.routeLog.push(tr)
+        if (this.routeLog.length > ROUTE_LOG_MAX) this.routeLog.shift()
+        this.fades.push(tr.slice(-TRAIL_MAX))
       }
+    }
+    for (let i = this.fades.length - 1; i >= 0; i--) {
+      const f = this.fades[i]
+      f.shift(); f.shift()
+      if (f.length < 2) this.fades.splice(i, 1)
     }
 
     ctx.lineCap = 'round'
-    for (const tr of this.trails.values()) {
-      for (let i = 1; i < tr.length; i++) {
-        const a = tr[i - 1], b = tr[i]
-        const k = i / tr.length
+    // The tail: the last TRAIL_MAX points of a live route, plus the fades —
+    // drawn exactly as trails always were, so recording the whole story
+    // changed nothing the player sees.
+    const tail = (pts) => {
+      const start = Math.max(1, pts.length - TRAIL_MAX + 1)
+      const span = Math.min(pts.length, TRAIL_MAX)
+      for (let i = start; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i]
+        const k = (i - start + 1) / span
         ctx.strokeStyle = trailColour(b.v, b.c * k, P.varnish)
         ctx.lineWidth = Math.max(0.6, this.S(0.0055) * 1.5 * k)
         ctx.beginPath()
@@ -812,6 +891,8 @@ export class Renderer {
         ctx.stroke()
       }
     }
+    for (const tr of this.trails.values()) tail(tr)
+    for (const f of this.fades) tail(f)
 
     const r = this.S(0.0055)
     for (const b of m.world.balls) {
