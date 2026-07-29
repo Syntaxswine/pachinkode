@@ -19,6 +19,14 @@ import { framePalette, trailColour, rippleColour, valueColour, hsl, scoreColour,
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 import { WAVE, waveW } from '../sim/machine.js'
 
+// Artwork registry for motif boards — RENDER-SIDE ONLY, keyed by motif id.
+// The sim's motif objects carry geometry and never an image (design law L4;
+// the varnish suite's banned-member regexes police the Machine, this registry
+// is where the picture legally lives). Rect in board metres; alpha is the
+// resting strength before the varnish rides it.
+const MOTIF_ART = {}
+export function registerMotifArt (id, spec) { MOTIF_ART[id] = { ...spec, img: null } }
+
 const TAU = Math.PI * 2
 const TRAIL_MAX = 26
 
@@ -167,6 +175,7 @@ export class Renderer {
 
     this.background(ctx, P, w, h, dop)
     this.iris(ctx, P, dop)
+    this.motifBackdrop(ctx, P, machine)
     this.boardFace(ctx, P)
     this.rail(ctx, P, machine)
     this.housing(ctx, P, machine)
@@ -294,8 +303,41 @@ export class Renderer {
     }
   }
 
+  /**
+   * The motif's background artwork — the 1970s move: a printed picture behind
+   * the nails, with the brass laid out to MATCH it (operator's design, from a
+   * Nishijin Deluxe Super reference).
+   *
+   * THE LACQUER RULING, explicit: the artwork is PURE LACQUER. The contour's
+   * information — why the nails sit where they sit — is carried by the nails
+   * themselves, which render at every varnish; the picture is celebration, so
+   * it is gated at varnish > 0.01 and its alpha rides the varnish, exactly the
+   * tanuki-mascot idiom. Art lives HERE, keyed by motif id — the sim-side
+   * motif carries geometry only (L4: the Machine never sees an image).
+   *
+   * Composited between the iris and the board face: under nails, walls, and
+   * every instrument, over the machine's eye.
+   */
+  motifBackdrop (ctx, P, m) {
+    const motif = m.parts.motif
+    if (!motif || P.varnish <= 0.01) return
+    const art = MOTIF_ART[motif.id]
+    if (!art) return
+    if (!art.img) {
+      if (typeof Image === 'undefined') return
+      art.img = new Image()
+      art.img.src = art.src
+    }
+    if (!art.img.complete || !art.img.naturalWidth) return
+    ctx.save()
+    ctx.globalAlpha = art.alpha * P.varnish
+    ctx.drawImage(art.img, this.X(art.x), this.Y(art.y), this.S(art.w), this.S(art.h))
+    ctx.restore()
+  }
+
   housing (ctx, P, m) {
     const H = m.parts.housing
+    if (!H) return                       // a motif board may have no centre housing
     ctx.fillStyle = P.housing
     ctx.beginPath()
     ctx.moveTo(this.X(H.x0), this.Y(H.y0))
@@ -329,10 +371,17 @@ export class Renderer {
    * four, each a ball that already paid and is waiting its turn to lose.
    */
   display (ctx, P, m, dop) {
+    // The screen rectangle has exactly one provider: the board's own
+    // parts.displayRect when a motif relocated the readout to the margins,
+    // else the rect derived from the housing with today's exact numbers.
+    // Everything inside — reels, verdicts, pending lamps, the tanuki video —
+    // is rect-relative, so this one seam moves the whole readout.
     const H = m.parts.housing
-    const pad = 0.016
-    const x0 = this.X(H.x0 + pad), x1 = this.X(H.x1 - pad)
-    const y0 = this.Y(H.y0 - 0.008), y1 = this.Y(H.y1 - 0.030)
+    const D = m.parts.displayRect ||
+      (H && { x0: H.x0 + 0.016, y0: H.y0 - 0.008, x1: H.x1 - 0.016, y1: H.y1 - 0.030 })
+    if (!D) return
+    const x0 = this.X(D.x0), x1 = this.X(D.x1)
+    const y0 = this.Y(D.y0), y1 = this.Y(D.y1)
     const w = x1 - x0, h = y1 - y0
 
     // ── the flapper's screen ─────────────────────────────────────────────
@@ -345,7 +394,7 @@ export class Renderer {
       ctx.font = `500 ${Math.max(7, h * 0.085)}px ui-monospace, monospace`
       ctx.fillStyle = hsl(P.hue, P.saturation * 0.35, 0.40)
       ctx.fillText('羽根物 NO LOTTERY', x0 + w / 2, y0 + h * 0.13)
-      const open = m.parts.tulips.some(t => t.open)
+      const open = (m.parts.tulips || []).some(t => t.open)
       ctx.font = `600 ${Math.max(12, h * 0.30)}px ui-monospace, monospace`
       ctx.fillStyle = open
         ? hsl(44, P.saturation * 1.1, 0.62)
@@ -550,7 +599,7 @@ export class Renderer {
     // The life nails get a mark: they are the two that decide the machine.
     ctx.strokeStyle = hsl(P.hue - 140, P.saturation * 0.5, 0.55, 0.5)
     ctx.lineWidth = 1
-    for (const n of m.parts.lifeNails) {
+    for (const n of m.parts.lifeNails || []) {
       ctx.beginPath()
       ctx.arc(this.X(n.x), this.Y(n.y) + sag, r * 2.4, 0, TAU)
       ctx.stroke()
@@ -674,6 +723,7 @@ export class Renderer {
     // Warp mouths.
     for (const k of ['warpL', 'warpR']) {
       const s = m.parts.sensors[k]
+      if (!s) continue                   // a motif board may carry fewer warps
       ctx.strokeStyle = hsl(P.hue - 60, P.saturation * 0.5, 0.5, 0.7)
       ctx.strokeRect(this.X(s.x - s.w / 2), this.Y(s.y - s.h / 2), this.S(s.w), this.S(s.h))
     }

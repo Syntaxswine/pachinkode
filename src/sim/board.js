@@ -79,18 +79,33 @@ const py = (deg, rad) => R.cy + Math.sin(deg * D2R) * rad
  * longer a safety net — it is the only reason an arbitrary loadout is safe to
  * hand a player at all.
  */
-export function buildBoard (loadout = baseLoadout()) {
+/**
+ * `motif` (optional) is a per-cabinet board layout — geometry authored from an
+ * image rather than the standard grid (see motifs.js). It rides the LOADOUT
+ * (loadout.motif, stamped by Run from the cabinet) so machines, refits and
+ * floor rebuilds inherit it without a single call-site change. LAWS:
+ *   - motif === null is BYTE-IDENTICAL to the pre-motif board; the golden
+ *     fingerprint test pins this.
+ *   - a motif owns the FIELD INTERIOR only. The rail, bowl, launcher and foul
+ *     channel are never a motif's to touch — that is what keeps ROUTE_ODDS,
+ *     FOUL_ODDS, speedFor and the stuck-ball channel test honest on every
+ *     board without per-motif re-measurement.
+ *   - the build order below never changes; the wedge sweep runs LAST over
+ *     whatever geometry a motif emits, exactly as for loadouts.
+ *   - motifs reposition existing pocket KINDS; they never invent event types.
+ */
+export function buildBoard (loadout = baseLoadout(), motif = loadout.motif || null) {
   const world = new World({ w: BOARD.w, h: BOARD.h })
   const parts = {
     nails: [], tulips: [], rotors: [], sensors: {}, attacker: null, housing: null,
-    buckets: [], loadout
+    buckets: [], loadout, motif
   }
 
   buildRail(world)
-  buildHousing(world, parts, loadout)
-  buildNailField(world, parts, loadout)
-  buildFurniture(world, parts, loadout)
-  buildPockets(world, parts, loadout)
+  buildHousing(world, parts, loadout, motif)
+  buildNailField(world, parts, loadout, motif)
+  buildFurniture(world, parts, loadout, motif)
+  buildPockets(world, parts, loadout, motif)
   buildBuckets(world, parts, loadout)
   parts.wedges = clearWedges(world, parts)
 
@@ -118,7 +133,10 @@ function clearWedges (world, parts, verbose = false) {
   const BALL_D = BALL_R * 2
   const MIN_CLEAR = BALL_D + 0.0018        // must pass a ball with margin
   const removed = []
-  const protectedNails = new Set([...parts.lifeNails, ...(parts.featureNails || [])])
+  // Both guarded: a motif field may legitimately have no life-nail pair (its
+  // funnel can be the contour itself), and an unguarded spread here was the
+  // first crash every motif prototype would have hit.
+  const protectedNails = new Set([...(parts.lifeNails || []), ...(parts.featureNails || [])])
 
   // Pass 1 — nails against walls and windmills.
   let keep = []
@@ -379,7 +397,7 @@ export function thresholdCrestSpeed () {
 
 // --- the centre housing ---------------------------------------------------
 
-function buildHousing (world, parts, L) {
+function buildHousing (world, parts, L, motif = null) {
   // The housing is gabled, not flat-topped. A flat roof is a shelf, and a shelf
   // in a pachinko machine is a ball trap — the first build parked forty-eight
   // balls up here per run. Real centre housings are domed or peaked for exactly
@@ -473,7 +491,7 @@ function roundedRectPoints (x0, y0, x1, y1, r, seg) {
 
 // --- the nail field -------------------------------------------------------
 
-function buildNailField (world, parts, L) {
+function buildNailField (world, parts, L, motif = null) {
   const { housing } = parts
   // Reported nail counts vary widely — roughly 100 on modern LCD-dominated boards,
   // 500+ on early machines, with ~200 a commonly quoted modern figure. There is no
@@ -555,7 +573,7 @@ function buildNailField (world, parts, L) {
 
 // --- windmills, tulips ----------------------------------------------------
 
-function buildFurniture (world, parts, L) {
+function buildFurniture (world, parts, L, motif = null) {
   // Windmills (風車, kazaguruma). Brass axle, same hardness spec as the nails.
   parts.rotors.push(world.addRotor(0.082, 0.238, 0.0225, 4, 0))
   parts.rotors.push(world.addRotor(0.358, 0.238, 0.0225, 4, 0))
@@ -625,7 +643,7 @@ export function applyTulip (tulip, dt) {
 
 // --- pockets --------------------------------------------------------------
 
-function buildPockets (world, parts, L) {
+function buildPockets (world, parts, L, motif = null) {
   // The start pocket — 始動口 (shidōguchi), universally called ヘソ, "the navel".
   // Landing here does NOT pay meaningfully; it triggers the digital lottery. The
   // gap between "the ball went in" and "you won" is the single most important
