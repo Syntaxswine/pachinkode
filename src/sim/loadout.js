@@ -240,12 +240,17 @@ export const PARTS = [
       'and the later ones pay more, because they are the ones the routes feed least. This is ' +
       'the only part that raises how OFTEN you score rather than how much.',
     apply (L) {
+      // Motif boards draft against their own table and order — and may hold
+      // fewer sites than stock, in which case the sold-out fallback below
+      // fires earlier, exactly as designed (a paid pick always pays).
+      const TABLE = (L.motif && L.motif.bucketSites) || BUCKET_SITES
+      const ORDER = (L.motif && L.motif.siteOrder) || SITE_ORDER
       const taken = new Set(L.buckets.map(b => b.site))
-      const site = SITE_ORDER.find(s => !taken.has(s))
+      const site = ORDER.find(s => !taken.has(s))
       if (!site) { L.bucketScore += 0.5; return }   // sold out — pays value instead
-      L.buckets.push({ site, value: BUCKET_SITES[site].value, widen: 0 })
+      L.buckets.push({ site, value: TABLE[site].value, widen: 0 })
     },
-    available: (L) => L.buckets.length < SITE_ORDER.length
+    available: (L) => L.buckets.length < (((L.motif && L.motif.siteOrder) || SITE_ORDER).length)
   },
   {
     id: 'widen',
@@ -436,8 +441,28 @@ export const PART_BY_ID = Object.fromEntries(PARTS.map(p => [p.id, p]))
  * written by an older build must still open. A run whose parts have been renamed
  * out from under it loses a part; it does not lose the save.
  */
-export function resolveLoadout (partIds = [], base = null) {
+/**
+ * `motif` (optional): the cabinet's motif board, stamped BEFORE parts apply so
+ * that (a) bucket parts draft against the motif's own site table and order,
+ * and (b) the starting buckets are remapped onto motif berths — a motif may
+ * legally sell FEWER sites than stock (the westHigh precedent: a pocket the
+ * board cannot feed is not shipped), and the stock starting site names may
+ * not exist in its table. Remap first, then parts, so value-mutating parts
+ * (HEAVY BUCKETS) compound on the motif's honest prices.
+ */
+export function resolveLoadout (partIds = [], base = null, motif = null) {
   const L = base || baseLoadout()
+  if (motif !== null) L.motif = motif
+  if (L.motif && L.motif.bucketSites) {
+    const TABLE = L.motif.bucketSites
+    const ORDER = L.motif.siteOrder || SITE_ORDER.filter(s => TABLE[s])
+    const taken = () => new Set(L.buckets.map(b => b.site))
+    for (const b of L.buckets) {
+      if (!TABLE[b.site]) b.site = ORDER.find(s => !taken().has(s)) || b.site
+      if (TABLE[b.site]) b.value = TABLE[b.site].value
+    }
+    L.buckets = L.buckets.filter(b => TABLE[b.site])
+  }
   for (const id of partIds) {
     const p = PART_BY_ID[id]
     if (!p) continue

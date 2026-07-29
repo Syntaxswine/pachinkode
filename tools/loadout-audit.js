@@ -41,9 +41,7 @@ const failures = []
 function check (label, partIds, motif = null) {
   let built
   try {
-    const L = resolveLoadout(partIds)
-    L.motif = motif
-    built = buildBoard(L)
+    built = buildBoard(resolveLoadout(partIds, null, motif))
   } catch (e) {
     // A thrown build is a PASS for the wedge question and a FAIL for the game:
     // it means a site could not be placed legally. Report it as broken, because

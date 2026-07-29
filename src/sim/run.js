@@ -321,11 +321,11 @@ export class Run {
     this.cabinet = cabinet
     this.seed = seed
     this.rng = makeRng(seed ^ 0x9e3779b9)
-    this.loadout = resolveLoadout(cabinet.parts || [])
-    // The motif rides the loadout (see buildBoard) — stamping it here is what
-    // makes every floor's fresh Machine, and every mid-run refit, build the
-    // cabinet's actual board rather than silently reverting to the stock one.
-    this.loadout.motif = cabinet.motif || null
+    // The motif rides the loadout (see buildBoard) and goes in BEFORE parts
+    // apply — resolveLoadout remaps the starting buckets onto the motif's own
+    // site table and prices, so every floor's fresh Machine and every mid-run
+    // refit build the cabinet's actual board at the motif's actual values.
+    this.loadout = resolveLoadout(cabinet.parts || [], null, cabinet.motif || null)
 
     // SANDBOX (FREE PLAY): same scoreboard, no wall and no clock. The score
     // becomes a WALLET — see the shop section below — which is the operator's

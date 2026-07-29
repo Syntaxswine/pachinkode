@@ -116,6 +116,10 @@ function newSession () {
   renderer.ripples.length = 0
   renderer.routeLog.length = 0
   renderer.fades.length = 0
+  // A fresh session is a fresh board — stale flares/tiers under recycled
+  // site ids were flashing the OLD board's colours (review finding).
+  renderer.bucketFlare.clear()
+  renderer.bucketTier.clear()
 }
 
 // ── the run ────────────────────────────────────────────────────────────────
@@ -153,6 +157,7 @@ function buildFloor () {
   machine.dial = 0.20
   renderer.trails.clear()
   renderer.bucketFlare.clear()
+  renderer.bucketTier.clear()
   renderer.scorePops.length = 0
   renderer.ripples.length = 0
   // Routes describe a board; this is a new board.
@@ -322,7 +327,8 @@ function syncCabinets () {
       `<span class="dsc">${open ? c.note : 'Locked.'}</span>` +
       (open
         ? `<span class="fit">quota ×${c.difficulty.toFixed(2)}` +
-          `${fitted ? ` · starts with ${fitted} part${fitted > 1 ? 's' : ''} already fitted` : ' · stock board'}</span>`
+          `${fitted ? ` · starts with ${fitted} part${fitted > 1 ? 's' : ''} already fitted`
+            : c.motif ? ' · picture board — the layout is the artwork' : ' · stock board'}</span>`
         : `<span class="lock">${unlockText(c, state.meta)}</span>`)
     if (open) b.addEventListener('click', () => { synth.click(); startRun(key); go('play') })
     host.appendChild(b)
@@ -1332,10 +1338,13 @@ function handleEvents (events) {
         synth.split(state.varnish)
         break
 
-      case 'holdOverflow':
-        // A ball that paid but bought no ticket. Small, legal, and worth seeing.
-        renderer.flash(0.220, 0.332, -0.3)
+      case 'holdOverflow': {
+        // A ball that paid but bought no ticket. Small, legal, and worth
+        // seeing — AT THE BOARD'S OWN HESO, which a motif may have moved.
+        const hp = machine.parts.heso
+        renderer.flash(hp.x, hp.y + 0.010, -0.3)
         break
+      }
     }
   }
 
@@ -1379,9 +1388,15 @@ function updateTopbar () {
   const el = $('#tRoute')
   const pFoul = foulOdds(machine.power)
   const pRight = routeOdds(machine.power)
-  const near = Math.abs(pRight - 0.5) < 0.12
+  // The tables were measured on the stock field; a motif field moves the
+  // real split (review: 15–20 points). Unmeasured domain → grey + say so.
+  const motifField = !!machine.parts.motif
+  const near = !motifField && Math.abs(pRight - 0.5) < 0.12
   if (pFoul >= 0.5) {
     el.textContent = `FOUL ${Math.round(pFoul * 100)}%`
+    el.style.color = 'var(--faint)'
+  } else if (motifField) {
+    el.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右 · 未測`
     el.style.color = 'var(--faint)'
   } else {
     el.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右`

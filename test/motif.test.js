@@ -10,11 +10,7 @@ import { Run } from '../src/sim/run.js'
 import { CABINETS } from '../src/sim/cabinets.js'
 import { DT } from '../src/sim/world.js'
 
-const tanukiLoadout = () => {
-  const L = baseLoadout()
-  L.motif = MOTIFS.tanuki
-  return L
-}
+const tanukiLoadout = () => resolveLoadout([], null, MOTIFS.tanuki)
 
 test('the tanuki board builds, validates, and puts the heso on the navel', () => {
   const { world, parts } = buildBoard(tanukiLoadout())
@@ -22,7 +18,11 @@ test('the tanuki board builds, validates, and puts the heso on the navel', () =>
   assert.equal(parts.heso.y, MOTIFS.tanuki.heso.y)
   assert.ok(world.nails.length > MOTIFS.tanuki.minNails)
   assert.ok(parts.displayRect, 'the relocated readout was not stamped')
-  assert.equal(parts.tulips.length, 2)
+  // ONE wing, by measurement — see the motif's tulip comment. The starting
+  // buckets remap onto the 5-site table (westLow does not exist here).
+  assert.equal(parts.tulips.length, MOTIFS.tanuki.tulips.length)
+  assert.equal(parts.buckets.length, 2, 'starting buckets did not remap onto the motif table')
+  for (const b of parts.buckets) assert.ok(MOTIFS.tanuki.bucketSites[b.site], `bucket on unknown site ${b.site}`)
   // the stage-over-heso law
   assert.ok(Math.abs(parts.stage.x - parts.heso.x) <= parts.stage.halfWidth)
 })

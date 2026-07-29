@@ -231,9 +231,11 @@ export class Hud {
     // — the split is collision-dominated and genuinely unknowable — so the
     // figure greys and says what it is rather than asserting through it.
     const jammed = m.foulHeat > 1.6
+    // A motif field is outside the table's measured domain (same idiom).
+    const unmeasured = !!m.parts.motif
     this.hRoute.textContent = `左 ${Math.round((1 - pRight) * 100)} : ${Math.round(pRight * 100)} 右` +
-      (jammed ? ' · solo' : '')
-    this.hRoute.style.color = jammed ? 'var(--faint)' : near ? 'var(--hot)' : 'var(--ink)'
+      (jammed ? ' · solo' : unmeasured ? ' · 未測' : '')
+    this.hRoute.style.color = (jammed || unmeasured) ? 'var(--faint)' : near ? 'var(--hot)' : 'var(--ink)'
     const jn = Math.min(1, Math.max(0, (m.nextJitter - 0.0035) / (0.026 - 0.0035)))
     this.hScat.textContent = '±' + (m.nextJitter * 100).toFixed(2) + '%'
     this.mScat.style.width = (jn * 100).toFixed(0) + '%'

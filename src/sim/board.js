@@ -176,17 +176,24 @@ function clearWedges (world, parts, verbose = false) {
   let keep = []
   for (const n of world.nails) {
     if (protectedNails.has(n)) { keep.push(n); continue }
-    let worst = Infinity
+    // Walls and rotors judged SEPARATELY. A single shared minimum let a nail
+    // INSIDE a windmill's swept disc (rotor term negative) shield a genuine
+    // kill-band wall gap from ever being seen — the review proved the case.
+    let worstWall = Infinity
+    let worstRotor = Infinity
     for (const s of world.segments) {
       const c = closestOnSegment(n, { x: s.ax, y: s.ay }, { x: s.bx, y: s.by })
       const gap = Math.hypot(n.x - c.x, n.y - c.y) - n.r - s.r
-      if (gap < worst) worst = gap
+      if (gap < worstWall) worstWall = gap
     }
     for (const ro of parts.rotors) {
       const gap = Math.hypot(n.x - ro.x, n.y - ro.y) - n.r - ro.r - 0.0022
-      if (gap < worst) worst = gap
+      if (gap < worstRotor) worstRotor = gap
     }
-    if (worst > 0 && worst < MIN_CLEAR) { removed.push({ nail: n, gap: worst, against: 'wall' }); continue }
+    if ((worstWall > 0 && worstWall < MIN_CLEAR) || (worstRotor > 0 && worstRotor < MIN_CLEAR)) {
+      removed.push({ nail: n, gap: Math.min(worstWall, worstRotor), against: 'wall' })
+      continue
+    }
     keep.push(n)
   }
 

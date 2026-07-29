@@ -103,36 +103,38 @@ export const MOTIFS = {
     img: { x: IMG_X0, y: IMG_Y0, w: IMG_W, h: IMG_H },
     contour: thinContour(TANUKI_CONTOUR.map(([fx, fy]) => [TX(fx), TY(fy)])),
     heso: { x: TX(NAVEL[0]), y: TY(NAVEL[1]) },      // (0.220, 0.358)
-    // MEASURED LESSON (first sweep, 600 balls x 5 dials): a tulip placed ON
-    // the image — the paw, the tail's heart — is a pocket walled off by its
-    // own contour; both caught 0–2 balls in 3,000. A motif pocket must sit in
-    // OPEN FIELD where the art points at it, not inside the art. These flank
-    // the figure: beside the left paw, and under the tail's curl. Both well
-    // inboard (radius ≤ 0.127) per buildFurniture's converging-gap law.
+    // MEASURED LESSONS, two rounds (drum-fire sweeps + the adversarial
+    // review's independent probes): a tulip placed ON the image is walled
+    // off by its own contour (0–2 catches in 3,000); a tulip in the lower
+    // field interpenetrates the windmills' swept discs or pinches the bucket
+    // columns at some widen step — every candidate failed the intermediate
+    // ladder. The berths that are legal AND fed are the stock shoulders,
+    // which on this board flank the tanuki's head. tulipL at the left
+    // shoulder measured DEAD (the shrine roof is narrower than the stock
+    // housing, so nothing sheds into it) — and the westHigh precedent rules:
+    // a pocket the board cannot feed is not shipped. ONE wing, by the right
+    // ear, where the east route feeds it.
     tulips: [
-      { id: 'tulipL', x: 0.115, y: 0.240 },
-      { id: 'tulipR', x: 0.338, y: 0.272 }
+      { id: 'tulipR', x: 0.319, y: 0.148 }
     ],
-    // The motif's own bucket-site table: the standard names (the vocabulary
-    // law — run scoring and --sites key on them), repositioned where the
-    // figure or the motif's furniture stood over the standard mouths. The
-    // loadout-audit gate found every one of these the hard way: westLow under
-    // tulipL's cup wall, eastLow pinched against tulipR, centre under the
-    // relocated heso's own cup bottom.
+    // The motif's site table: FIVE berths, not stock's six. The west flank is
+    // the figure's rain shadow — westLow measured 1–3 catches per several
+    // thousand launches at every candidate berth (vs 47 on stock), and every
+    // relocation into the under-heso spill pinched the audit's kill band at
+    // some widen step. The westHigh precedent (loadout.js) rules: a pocket
+    // the board cannot feed is not sold. resolveLoadout remaps the stock
+    // starting buckets onto this table; the 'bucket' part drafts in
+    // siteOrder and pays its sold-out value fallback one pick earlier.
+    // Names keep the stock vocabulary (scoring and --sites key on them);
+    // labels tell the truth about where they now live.
     bucketSites: {
-      westLow: { x: 0.086, y: 0.284, jp: '左', label: 'WEST', value: 1.5 },
-      eastLow: { x: 0.320, y: 0.330, jp: '右', label: 'EAST', value: 2.2 },
+      eastLow: { x: 0.354, y: 0.284, jp: '右', label: 'EAST', value: 2.2 },
+      centre: { x: 0.322, y: 0.322, jp: '尾', label: 'THE TAIL CURL', value: 1.5 },
       westDeep: { x: 0.166, y: 0.376, jp: '左下', label: 'WEST FLOOR', value: 2.5 },
-      eastDeep: { x: 0.296, y: 0.376, jp: '右下', label: 'EAST FLOOR', value: 1 },
-      // 'centre' keeps its NAME (code vocabulary — scoring and --sites key on
-      // it) but lives in the open north-west field among the rosettes: the
-      // navel took the drop's old spot, and a placement solver proved the
-      // floor row cannot legally hold a third cup at max widen (every
-      // candidate under the relocated heso pinched westDeep, eastDeep, or
-      // the heso's own cup — measured, not guessed).
-      centre: { x: 0.130, y: 0.180, jp: '花', label: 'THE FLOWER BED', value: 1.5 },
+      eastDeep: { x: 0.274, y: 0.376, jp: '右下', label: 'EAST FLOOR', value: 1 },
       eastHigh: { x: 0.350, y: 0.216, jp: '右上', label: 'EAST SHOULDER', value: 1.4 }
     },
+    siteOrder: ['eastLow', 'centre', 'westDeep', 'eastDeep', 'eastHigh'],
     housing: { x0: 0.168, x1: 0.272, y0: 0.118, y1: 0.176, rise: 0.026, warps: [0.190, 0.250] },
     displayRect: { x0: 0.308, y0: 0.010, x1: 0.434, y1: 0.056 },
     corridorHalf: 0.022,
@@ -148,6 +150,9 @@ export const MOTIFS = {
     // clear span 14.2 mm and petal-to-petal 18.8 mm, both past the wedge
     // sweep's kill band BY CONSTRUCTION, so a rosette that ships is a rosette
     // that was legal, not one the sweep happened to spare.
+    // Measured irrelevant to the west starvation (feed identical with and
+    // without), so they stay for what they are: decoration. The west pair
+    // lives on because the west flank is now art country, not product.
     rosettes: [
       { x: 0.085, y: 0.170 },
       { x: 0.055, y: 0.205 },

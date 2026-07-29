@@ -869,6 +869,46 @@ tradeoff to bite harder, the lever is chain RAMP time, not the wave. Traps for t
 builder: `FIRE_POLICY` in run-sim is a `let` (wavecheck swaps it); all policies harvest during
 parties unconditionally; and the welcome constants' comment carries its own re-measure warning.
 
+## The motif boards, and the review that rebuilt one · 2026-07-29
+
+The operator's design, from a Nishijin Deluxe Super photo: 1970s machines printed a picture
+behind the nails and laid the brass to MATCH it. Three commits: the golden fingerprint + seams
+(byte-identical, `70d3ac89:500` pinned), the TANUKIDAI cabinet, and a 22-finding adversarial
+review round. Read `src/sim/motifs.js`'s header before authoring a second motif — the measured
+lessons live there. The load-bearing laws:
+
+- **The motif rides the loadout** (`resolveLoadout(partIds, base, motif)` — stamped BEFORE
+  parts apply, so starting buckets remap onto the motif's table and value-mutating parts
+  compound on the motif's honest prices). Machines, refits, floor rebuilds inherit it free.
+- **Motifs own the field interior only**; rail/launcher/bowl stay stock. But the review
+  MEASURED that a motif FIELD still moves the real route split 15–20 points — so the
+  route-odds bar, 50:50 tick, topbar and FIELD NOTES all grey to 未測 (unmeasured) on motif
+  boards, the jam idiom. Per-motif tables are a pre-registered future measurement.
+- **A motif may sell FEWER sites than stock** (tanuki ships FIVE): the westHigh precedent,
+  applied twice — westLow's flank is the figure's rain shadow (1–3 catches per several
+  thousand vs 47 stock, at every candidate berth), and tulipL measured dead at every legal
+  berth. One wing, by the right ear. `siteOrder` + the bucket part's sold-out fallback make
+  the shorter roster honest in the draft.
+- **`tools/motif-audit.js` is the second GATE** (exit 1). It exists because the review found
+  two reachable ball traps in exactly the states loadout-audit never builds: the INTERMEDIATE
+  ladder (buckets 2–4 × widen 0–3 × sticky on/off — a closed-wing pinch was masked by MAXED's
+  sticky-open pose), protected-nail-vs-wall cradles (the sweep exempts feature nails; a
+  relocated cup made a 7 mm cradle that froze balls 40 s then confiscated them), tulip wings
+  vs windmill SWEPT DISCS in both poses, and a drum-fired deadness check on every organ.
+  Run it after ANY motif geometry change; placement by hand-arithmetic failed six straight
+  times where the solver-against-the-real-gate landed it.
+- Also fixed from the review: clearWedges' shared-minimum rotor shield (walls and rotors now
+  judged separately — a nail inside a swept disc could hide a kill-band wall gap); lamps
+  rebuild per-board and part around a motif's marquee; the reach crawl converges on the
+  READOUT wherever it lives; holdOverflow flashes at the board's own heso; bucketFlare AND
+  bucketTier clear on session/floor swaps; `--sites` takes `--cab` and derives its dead-site
+  list from the board it actually built; the cabinet card says "picture board", not "stock".
+
+TANUKIDAI measured after all of it: curve 100% clears, gentle (22%/43% floors 1–2); every
+site scores in `--sites --cab tanukidai`; feed per motif-audit: eastLow 139 · eastHigh 138 ·
+tail-curl 103 · heso 57 · wing 56 · eastDeep 47 · westDeep 18. The heso sits on the tanuki's
+literal navel, which is what the ヘソ has been called all along.
+
 ## Left undone
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
   floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one

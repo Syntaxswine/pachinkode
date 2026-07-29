@@ -713,8 +713,7 @@ test('exactly one cabinet is available to a new player', () => {
 test('every cabinet builds a legal board from its starting parts', () => {
   for (const key of CABINET_ORDER) {
     const cab = CABINETS[key]
-    const L = resolveLoadout(cab.parts || [])
-    L.motif = cab.motif || null
+    const L = resolveLoadout(cab.parts || [], null, cab.motif || null)
     const built = buildBoard(L)
     assert.ok(built.parts.buckets.length >= 2, `${key} starts with too few buckets`)
     // A motif declares its own nail floor (a contour field is legitimately

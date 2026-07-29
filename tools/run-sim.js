@@ -241,10 +241,13 @@ if (flag('sites')) {
   // ball is a dead draft pick however clean its walls are.
   const tally = {}
   const N = num('n', 6)
-  console.log(`\n  bucket entries over ${N} runs on a fully-bucketed board\n`)
+  const cab = CABINETS[arg('cab', 'floor')]   // review: --sites was hardwired to the stock cabinet
+  console.log(`\n  bucket entries over ${N} runs on a fully-bucketed ${cab.label} board\n`)
+  let expected = []
   for (let i = 0; i < N; i++) {
-    const run = new Run(CABINETS.floor, i + 1)
-    for (let k = 0; k < 7; k++) run.loadout.buckets.length < 7 && PART_BY_ID.bucket.apply(run.loadout)
+    const run = new Run(cab, i + 1)
+    for (let k = 0; k < 7; k++) PART_BY_ID.bucket.available(run.loadout) && PART_BY_ID.bucket.apply(run.loadout)
+    expected = run.loadout.buckets.map(b => b.site)
     playFloor(run, i + 1, tally)
   }
   const rows = Object.entries(tally).sort((a, b) => b[1] - a[1])
@@ -253,8 +256,10 @@ if (flag('sites')) {
     console.log(`    ${site.padEnd(10)} ${String(n).padStart(6)}   ${pct(n / total).padStart(5)}` +
       `  ${'█'.repeat(Math.round(40 * n / rows[0][1]))}`)
   }
-  const dead = ['westLow', 'eastLow', 'westDeep', 'eastDeep', 'centre', 'westHigh', 'eastHigh']
-    .filter(s => !tally[s])
+  // The dead list derives from the board that WAS BUILT — a literal list
+  // reported motif-absent sites as dead and motif-dead sites as fine
+  // (review finding; also the vugg lesson about instruments and stale maps).
+  const dead = expected.filter(s => !tally[s])
   console.log(dead.length
     ? `\n  DEAD SITES (never scored): ${dead.join(', ')}\n`
     : `\n  Every site scores. No dead draft picks.\n`)

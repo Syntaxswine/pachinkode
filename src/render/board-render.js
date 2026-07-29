@@ -1115,8 +1115,14 @@ export class Renderer {
     ctx.textAlign = 'left'
 
     // Where the two routes are closest to even odds — measured, not derived.
+    // ROUTE_ODDS and the 50:50 tick were measured on the STOCK field, and a
+    // review measured a motif field moving the real split 15–20 points — so
+    // on motif boards the tick hides and the split bar greys (the jam idiom:
+    // outside the measured domain, the instrument says so). Per-motif tables
+    // are a future, pre-registered measurement.
+    const motifField = !!m.parts.motif
     const tDial = this.thresholdDial()
-    if (tDial > 0 && tDial < 1) {
+    if (!motifField && tDial > 0 && tDial < 1) {
       const tx = railL + span * tDial
       ctx.strokeStyle = hsl(44, P.saturation * 1.3, 0.55)
       ctx.lineWidth = 1.5
@@ -1140,7 +1146,7 @@ export class Renderer {
     const jam = m.foulHeat > 1.6
     const obY = y0 + h * 0.20
     const obX = x0 + w * 0.22, obW = w * 0.34, obH = this.S(0.006)
-    if (jam) ctx.globalAlpha = 0.35
+    if (jam || motifField) ctx.globalAlpha = 0.35
     ctx.fillStyle = hsl(212, P.saturation * 0.7, 0.42)
     ctx.fillRect(obX, obY - obH / 2, obW * (1 - pRight), obH)
     ctx.fillStyle = hsl(30, P.saturation * 0.9, 0.50)
@@ -1150,7 +1156,8 @@ export class Renderer {
     ctx.textAlign = 'right'
     ctx.fillText(`左 ${Math.round((1 - pRight) * 100)}`, obX - this.S(0.004), obY + this.S(0.003))
     ctx.textAlign = 'left'
-    ctx.fillText(`${Math.round(pRight * 100)} 右${jam ? ' · solo' : ''}`, obX + obW + this.S(0.004), obY + this.S(0.003))
+    ctx.fillText(`${Math.round(pRight * 100)} 右${jam ? ' · solo' : motifField ? ' · 未測' : ''}`,
+      obX + obW + this.S(0.004), obY + this.S(0.003))
     ctx.globalAlpha = 1
 
     // ── the hammer ──
@@ -1359,12 +1366,21 @@ export class Renderer {
     const t = this._t
 
     // Positions, built once: top row then upper sides.
-    if (!this._lampPos) {
+    // Rebuilt when the board's readout claims margin space — lamps that fall
+    // under a motif's marquee are dropped rather than drawn over the reels
+    // (review finding: the parlour lights were shining on the instrument).
+    const D = m.parts.displayRect || null
+    const lampKey = D ? `${D.x0},${D.y0}` : 'stock'
+    if (!this._lampPos || this._lampKey !== lampKey) {
       const pos = []
       for (let i = 0; i < 12; i++) pos.push({ x: 0.045 + (0.350 / 11) * i, y: 0.011 })
       for (let i = 0; i < 4; i++) pos.push({ x: 0.010, y: 0.055 + 0.045 * i })
       for (let i = 0; i < 4; i++) pos.push({ x: 0.430, y: 0.055 + 0.045 * i })
-      this._lampPos = pos
+      this._lampPos = D
+        ? pos.filter(p => !(p.x > D.x0 - 0.010 && p.x < D.x1 + 0.010 &&
+                            p.y > D.y0 - 0.010 && p.y < D.y1 + 0.010))
+        : pos
+      this._lampKey = lampKey
     }
     const pos = this._lampPos
     const N = pos.length
@@ -1395,7 +1411,12 @@ export class Renderer {
         // Reach: light converging on the middle of the top row, with the crawl.
         // The sides sit it out — the drama is over the display.
         if (i < 12) {
-          const c = Math.abs(i - 5.5) / 5.5
+          // Converge on the READOUT, wherever this board keeps it — the
+          // stock display centres at x 0.220 (index 5.5); a motif marquee
+          // pulls the crawl toward its own corner.
+          const rx = D ? (D.x0 + D.x1) / 2 : 0.220
+          const ti = Math.max(0, Math.min(11, (rx - 0.045) * 11 / 0.350))
+          const c = Math.min(1, Math.abs(i - ti) / 5.5)
           b = 1 - c * Math.min(1, 2 - 2 * (m.spin.t / m.spin.dur))
         } else b = 0.06
       }
