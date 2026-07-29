@@ -83,3 +83,28 @@ test('the wave leaves the rng stream alone: same draw count per spin decision', 
   }
   assert.equal(draws(WAVE.welcomePeriod + 1), draws(WAVE.welcomePeriod + WAVE.period * WAVE.crest))
 })
+
+// ── the wall-side gold split (operator's find, 2026-07-29) ──────────────────
+
+test('a gold split beside a wall never births the twin in dead space', async () => {
+  const { World, makeBall, BALL_R, MAT } = await import('../src/sim/world.js')
+  // A vertical wall immediately LEFT of a nail: the old blind offset spawned
+  // the leftward twin straight through it.
+  const w = new World({ w: 0.44, h: 0.55 })
+  // The nail sits one ball-radius-and-change off the wall face — the rail
+  // environment. A twin offset a full diameter leftward lands PAST the
+  // wall's centerline, where the contact solver resolves it to the far side
+  // and it lives in dead space (the operator watched it happen).
+  w.addSegment(0.09, 0.0, 0.09, 0.5, 0.002, MAT.wall)
+  const nail = w.addNail(0.09 + 0.002 + BALL_R + 0.0004, 0.25)
+  w.spawn(makeBall(nail.x + 0.0002, nail.y - 0.02, 0, 0.4, { gold: true }))
+  let split = null
+  for (let i = 0; i < 1200 && !split; i++) {
+    w.step()
+    for (const ev of w.drainEvents()) if (ev.type === 'split') split = ev
+  }
+  assert.ok(split, 'no split happened — the setup missed the nail')
+  for (const b of w.balls) {
+    assert.ok(b.x > 0.09, `a ball sits at x=${b.x.toFixed(4)} — behind the wall at 0.09`)
+  }
+})

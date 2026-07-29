@@ -321,14 +321,46 @@ export class World {
           // A dead-vertical strike has no sideways to mirror; the split
           // itself supplies the parting shove.
           if (Math.abs(b.vx) < 0.15) b.vx = dir * 0.35
-          const twin = makeBall(b.x - dir * (b.r * 2 + 0.0003), b.y, -b.vx, b.vy,
-            { split: true })
+          // The twin must be born in OPEN AIR. The blind sideways offset put
+          // it BEHIND the rail when the split happened at a wall-side nail
+          // (operator's find: balls living in dead space, occasionally
+          // knocked back into play by later arrivals). Try the mirror side
+          // when the preferred side is walled; if both are walled the twin
+          // is born on its parent — the mirrored pair is strictly
+          // separating, so the overlap resolves by flight, not by snap.
+          const off = b.r * 2 + 0.0003
+          let tx = b.x - dir * off
+          if (!this._clearAt(tx, b.y, b.r)) {
+            const alt = b.x + dir * off
+            tx = this._clearAt(alt, b.y, b.r) ? alt : b.x
+          }
+          const twin = makeBall(tx, b.y, -b.vx, b.vy, { split: true })
           twin.w = -b.w
           this._splits.push(twin)
           this.emit('split', { x: b.x, y: b.y, ball: b, twin })
         }
       }
     }
+  }
+
+  /**
+   * Is a ball of radius r free to EXIST at (x, y)? Checks every wall segment
+   * and nail — a brute loop, which is fine because the only caller is the
+   * gold split, a rare event. Used to keep spawned twins out of dead space:
+   * the contact solver can push a ball OUT of a wall it drifted into, but a
+   * ball BORN past the wall's far face is resolved to the wrong side and
+   * lives there.
+   */
+  _clearAt (x, y, r) {
+    const p = { x, y }
+    for (const s of this.segments) {
+      const c = closestOnSegment(p, { x: s.ax, y: s.ay }, { x: s.bx, y: s.by })
+      if (Math.hypot(x - c.x, y - c.y) < s.r + r) return false
+    }
+    for (const n of this.nails) {
+      if (Math.hypot(x - (n.x + n.bx), y - (n.y + n.by)) < n.r + r) return false
+    }
+    return true
   }
 
   _collideSegments (b) {

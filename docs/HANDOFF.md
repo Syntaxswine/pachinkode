@@ -817,6 +817,15 @@ let die) and a note that states, per-run, the measured headline fact the backlog
 retired; the screen now says "Steel, brass, and a little luck. The parlour is open." A player
 arrives at a parlour, not a lecture.
 
+**The wall-side gold split (operator's find, fixed same day).** The twin's blind sideways
+offset could birth it PAST a wall's centerline at rail-side nails, where the contact solver
+resolves it to the far face — a ball living in dead space, occasionally knocked back into play.
+The solver can push a ball OUT of a wall it drifted into, but a ball BORN behind one is
+resolved to the wrong side: spawn positions must be checked, not trusted. `World#_clearAt`
+now vets the twin's berth (preferred side → mirror side → on the parent, whose mirrored
+velocities are strictly separating). Test-pinned with a rail-tight repro that fails without
+the fix at exactly the operator's symptom.
+
 **The wavecheck, honestly reported.** `run-sim --wavecheck` races three firing brains on the
 same seeds (steady metronome / crest surfer / trough dripper). At n=6 the ROBUST signal is
 jackpots-per-1k-launched: steady 0.1, surf 1.2, drip 1.3 — timing the crest really is worth
