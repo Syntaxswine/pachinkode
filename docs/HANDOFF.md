@@ -995,6 +995,40 @@ identity is exact in integer range and drifts only where the display has already
 139 tests, canary quiet, verified live: floor 12 panel reads 1,990,652 / 1,000,000,000 for one
 bucket, and the myriad ladder engages at exactly 10兆.
 
+## 2026-07-30 — TEMPER: the paddles are the mint
+
+The operator's design: *"the spinning paddles could upgrade the balls into different things."*
+Built as **work-hardening**: a ball's value grows in flight, and the windmills do the minting.
+
+- **The ladder** (`TEMPER_STEP 3`, `TEMPER_MAX 3`, machine.js): each tier multiplies what the
+  ball's pockets SCORE by ×3, to ×27. Score only, NEVER ball payouts — RTP and the token
+  economy stand exactly where the instruments measured them, which is why no economy band moved.
+- **The mint is gated by violence** (`TEMPER_MIN_SPEED 1.0`): only a hard vane strike promotes,
+  once per windmill per ball (`temperFrom` bitmask). This constant is MEASURED, not chosen:
+  ungated ×3 collapsed the difficulty crossover to floor 2 (nearly every heso-bound ball
+  brushes a windmill); step ×2 held crossover 6 but halved the floors 2–5 crunch; ×3 gated at
+  1.0 reproduces the baseline crunch (floor 2 at 87% vs 89%) with crossover 6, 23/24. Retune
+  by re-running `node tools/run-sim.js --curve`, nothing else.
+- **THE TEMPER BAR** (part `temperbar`, 焼入れ棒): a wide quench bar sweeping the upper field
+  on a 7 s triangle wave, **non-solid** — balls fall through and come out promoted (no speed
+  gate; the part is allowed to be generous — windmills demand violence, the bar anneals).
+  Pure `machine.time`, zero RNG, zero contact solve: a test pins that fitting it changes NO
+  trajectory to twelve decimals. This is the pattern for moving furniture that must not touch
+  the fingerprint.
+- **Temper survives the warp and the gold split** — same steel, same trip; both spawn sites
+  copy `temper`/`temperFrom`/`barTempered`.
+- **Presentation**: temper rings on the ball (one per tier, luminance-borne at varnish 0, hue
+  is lacquer — the gold-ball law), an anvil-ping `temper` cue (family: mechanism — it
+  announces the steel, the money arrives at the pocket), a ×N pop at the promotion point.
+- **The launcher slider grew** (operator: it is the main knob): cabinet strip deepened
+  0.086 → 0.104 (render-only), thumb roughly doubled, rail thickened.
+
+Left undone, recorded: the **moving basket** (a translating catch bucket) — the operator
+floated it alongside the bar; the bar won this session because non-solid transformation
+composes with the fingerprint law for free, while a moving SOLID needs swept-volume gates
+(the motif-audit lesson, in time rather than space). The temper-bar pattern (deterministic
+time-driven position + a per-ball once flag) is half of the basket already.
+
 ## An observation from the operator, recorded because it is a real finding
 
 Listening to a run at the ARCADE rate: *"the rapid sound of the balls being shot sounds like a

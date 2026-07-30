@@ -1343,6 +1343,16 @@ function handleEvents (events) {
         synth.split(state.varnish)
         break
 
+      case 'temper':
+        // The steel promoted — by a windmill's vane or the temper bar. An
+        // anvil ping that climbs the ladder, and the tier printed at the
+        // ball. Mechanism news: what the ball is now WORTH arrives later,
+        // at whatever pocket it finds.
+        renderer.flash(ev.x, ev.y, 0.5)
+        renderer.pop(ev.x, ev.y, '×' + Math.pow(3, ev.tier), 0.7)
+        synth.temper(ev.tier, state.varnish)
+        break
+
       case 'holdOverflow': {
         // A ball that paid but bought no ticket. Small, legal, and worth
         // seeing — AT THE BOARD'S OWN HESO, which a motif may have moved.

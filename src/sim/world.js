@@ -88,6 +88,14 @@ export function makeBall (x, y, vx = 0, vy = 0, meta = {}) {
     age: 0,
     hits: 0,               // nail strikes this life — drives the audio rain
     lastHitAge: 0,
+    // ── TEMPER ── the ball's earned value tier (machine.js promotes it).
+    // 0 = plain steel. Each promotion multiplies what the ball's pockets
+    // SCORE (run.js) — never what they pay in balls, which is why the RTP
+    // instruments don't know this field exists. `temperFrom` is a bitmask of
+    // rotor ids so one windmill can't mint the same ball twice.
+    temper: 0,
+    temperFrom: 0,
+    barTempered: false,
     ...meta
   }
 }
@@ -138,6 +146,7 @@ export class World {
    */
   addRotor (x, y, r, blades = 4, spin = 0) {
     const rotor = {
+      id: this.rotors.length,     // stable index — temper's once-per-rotor bit
       x, y, r, blades, ang: 0, spin,
       inertia: 2.5e-6,            // kg·m²
       damp: 1.4,                  // 1/s, bushing friction
@@ -334,7 +343,10 @@ export class World {
             const alt = b.x + dir * off
             tx = this._clearAt(alt, b.y, b.r) ? alt : b.x
           }
-          const twin = makeBall(tx, b.y, -b.vx, b.vy, { split: true })
+          // The twin inherits its parent's temper — it is the same steel,
+          // work-hardened by the same trip.
+          const twin = makeBall(tx, b.y, -b.vx, b.vy,
+            { split: true, temper: b.temper, temperFrom: b.temperFrom, barTempered: b.barTempered })
           twin.w = -b.w
           this._splits.push(twin)
           this.emit('split', { x: b.x, y: b.y, ball: b, twin })

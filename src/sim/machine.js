@@ -47,6 +47,21 @@ import { baseLoadout } from './loadout.js'
 // one short opening, capped at two entries — a taste of the attacker at odds a
 // session will actually meet, so the lottery pays at three tiers: the 3-ball
 // entry pay always, koatari sometimes, ōatari rarely.
+// ── TEMPER ──────────────────────────────────────────────────────────────────
+// The work-hardening ladder (operator's design): the windmills and the TEMPER
+// BAR promote a ball's value tier. Each tier multiplies what the ball's
+// pockets SCORE by ×TEMPER_STEP — score only, never ball payouts, so RTP and
+// every measured curve stand exactly where they were. Cap 3: two stock
+// windmills plus the bar is the full ladder (×27), and it takes aiming to
+// collect. The multiplier is applied in run.js; this file only stamps events.
+export const TEMPER_STEP = 3
+export const TEMPER_MAX = 3
+// Only a HARD vane strike mints (normal contact speed, m/s): work-hardening
+// takes real impact energy, a glancing kiss does nothing. Measured knob — at
+// ×3 with NO gate the crossover collapsed to floor 2 (nearly every heso-bound
+// ball brushes a windmill); the gate returns the crunch. Still zero RNG.
+export const TEMPER_MIN_SPEED = 1.0
+
 export const SPECS = {
   amadeji: {
     label: 'AMADEJI 甘デジ',
@@ -303,6 +318,15 @@ export class Machine {
     // The flapper's wing choreography (hane spec only; inert elsewhere).
     this.flap = { queue: 0, pulse: null }
     this.flaps = 0
+    // ── THE TEMPER BAR ── (the part in loadout.js). A wide bar sweeping the
+    // upper field on a fixed clock, NON-SOLID: balls fall through and come
+    // out promoted. No RNG, no contact solve — position is pure machine.time,
+    // which is what keeps every trajectory on the board byte-identical with
+    // or without the part fitted. It transforms what pockets are WORTH, never
+    // where balls GO.
+    this.temperBar = this.loadout.temperBar
+      ? { y: 0.096, halfH: 0.009, halfW: 0.052, period: 7.0, x0: 0.075, x1: BOARD.w - 0.075 }
+      : null
     this.spin = null                 // {t, dur, outcome, reach, ko}
     this.kakuhen = 0                 // remaining ST spins at elevated odds
     this.jackpot = null              // {round, entries, t, shutAt, paid}
@@ -583,9 +607,20 @@ export class Machine {
     for (const t of this.parts.tulips) applyTulip(t, dt)
     applyAttacker(this.parts.attacker, dt)
 
+    if (this.temperBar) this.tickTemperBar()
+
     // --- pockets ----------------------------------------------------------
     for (const ev of w.drainEvents()) {
-      if (ev.type === 'hit') { this.emit('hit', ev); continue }
+      if (ev.type === 'hit') {
+        // THE PADDLES ARE THE MINT: a real vane strike promotes the ball one
+        // temper tier. Once per windmill per ball — rattling in one rotor's
+        // blades is one trip through the mint, not three.
+        if (ev.surface === 'vane' && ev.speed >= TEMPER_MIN_SPEED) {
+          this._temper(ev.ball, 1 << ev.rotor.id, 'rotor', ev.x, ev.y)
+        }
+        this.emit('hit', ev)
+        continue
+      }
       if (ev.type === 'split') { this.emit('split', ev); continue }
       if (ev.type !== 'sensor') continue
       this.onPocket(ev)
@@ -594,6 +629,43 @@ export class Machine {
     if (this.S.flapper) this.tickFlapper(dt)
     else this.tickLottery(dt)
     return this
+  }
+
+  /** The temper bar's x centre at machine time t — a triangle wave, so the
+   *  sweep is constant-speed in both directions, like a plotter carriage. */
+  get temperBarX () {
+    const B = this.temperBar
+    const ph = (this.time % B.period) / B.period
+    const k = ph < 0.5 ? ph * 2 : 2 - ph * 2
+    return B.x0 + (B.x1 - B.x0) * k
+  }
+
+  /** Balls inside the sweeping bar's band get one promotion, once ever. */
+  tickTemperBar () {
+    const B = this.temperBar
+    const bx = this.temperBarX
+    for (const b of this.world.balls) {
+      if (b.barTempered) continue
+      if (Math.abs(b.y - B.y) > B.halfH + b.r) continue
+      if (Math.abs(b.x - bx) > B.halfW) continue
+      b.barTempered = true
+      this._temper(b, 0, 'bar', b.x, b.y)
+    }
+  }
+
+  /**
+   * Promote a ball one temper tier. `bit` is the rotor's once-only mask bit
+   * (0 for the bar, which keeps its own flag). Deterministic — no RNG draw,
+   * so fitting or removing temper sources never shifts the lottery stream.
+   */
+  _temper (b, bit, via, x, y) {
+    if (bit) {
+      if (b.temperFrom & bit) return
+      b.temperFrom |= bit
+    }
+    if (b.temper >= TEMPER_MAX) return
+    b.temper++
+    this.emit('temper', { x, y, tier: b.temper, via, ball: b })
   }
 
   /**
@@ -635,8 +707,11 @@ export class Machine {
         const vx = this.rng.range(-0.10, 0.10)
         // Gold survives the warp: the ball has not met a nail yet, and the
         // stage releases it above the densest nails on the board.
+        // Temper survives the warp for the same reason gold does — same
+        // ball, same steel, and the trip that found the warp earned it.
         const out = this.world.spawn(makeBall(x, st.y, vx, 0.05,
-          { warped: true, gold: !!ev.ball.gold }))
+          { warped: true, gold: !!ev.ball.gold,
+            temper: ev.ball.temper, temperFrom: ev.ball.temperFrom, barTempered: ev.ball.barTempered }))
         // `from` lets the value model carry the ball's history across the warp.
         // It is the same ball: the trip that found the warp is part of what made
         // it valuable, and dropping the history here both loses that credit and
@@ -646,7 +721,7 @@ export class Machine {
       }
       case 'chucker':
         this.pay(HESO_PAY, 'heso')
-        this.emit('heso', { x: ev.x, y: ev.y, holds: this.holds, ball: ev.ball })
+        this.emit('heso', { x: ev.x, y: ev.y, holds: this.holds, ball: ev.ball, temper: ev.ball.temper })
         // On the flapper the navel buys no ticket — it works the WINGS. The
         // pulses queue (up to a small cap, like held spins) so rapid entries
         // keep the wings busy rather than being swallowed.
@@ -672,7 +747,7 @@ export class Machine {
         this.pay(BUCKET_PAY, 'bucket')
         this.emit('bucket', {
           x: ev.x, y: ev.y, site: ev.sensor, value: bk ? bk.value : 1,
-          n: BUCKET_PAY, ball: ev.ball
+          n: BUCKET_PAY, ball: ev.ball, temper: ev.ball.temper
         })
         break
       }
@@ -680,7 +755,7 @@ export class Machine {
         // On the flapper the wings ARE the payout organ (spec tulipPay);
         // on lottery machines they stay the token TULIP_PAY.
         this.pay(this.S.tulipPay || TULIP_PAY, 'tulip')
-        this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor, ball: ev.ball })
+        this.emit('tulip', { x: ev.x, y: ev.y, id: ev.sensor, ball: ev.ball, temper: ev.ball.temper })
         break
       case 'attacker':
         if (this.jackpot) {
@@ -690,7 +765,7 @@ export class Machine {
           this.jackpot.shutAt = this.time + ATTACKER_SHUT_DELAY
           this.emit('attacker', {
             x: ev.x, y: ev.y, entries: this.jackpot.entries,
-            n: this.S.payPerEntry, total: this.jackpot.paid, ball: ev.ball
+            n: this.S.payPerEntry, total: this.jackpot.paid, ball: ev.ball, temper: ev.ball.temper
           })
           if (this.jackpot.entries >= this.S.entriesPerRound) this.endRound()
         } else if (this.koatari) {
@@ -700,7 +775,7 @@ export class Machine {
           this.emit('attacker', {
             x: ev.x, y: ev.y, entries: this.koatari.entries,
             n: this.S.payPerEntry, total: this.koatari.entries * this.S.payPerEntry,
-            ko: true, ball: ev.ball
+            ko: true, ball: ev.ball, temper: ev.ball.temper
           })
         }
         break

@@ -98,6 +98,7 @@
 
 import { resolveLoadout, drawOffers } from './loadout.js'
 import { makeRng } from './rng.js'
+import { TEMPER_STEP } from './machine.js'
 
 // ── scoring ─────────────────────────────────────────────────────────────────
 //
@@ -685,11 +686,17 @@ export class Run {
     if (this.status !== 'playing') return
     this.inFlight = inFlight
     for (const ev of events) {
+      // TEMPER (machine.js): the ball's earned tier multiplies what its
+      // pocket SCORES — ×3 a tier, stamped on the event by the machine.
+      // Face value in, tempered value out; the chain and the denomination
+      // multiply on top in add(), so a tempered deep-chain hit compounds all
+      // three, which is the fantasy working as designed.
+      const tm = ev.temper ? Math.pow(TEMPER_STEP, ev.temper) : 1
       switch (ev.type) {
-        case 'bucket': this.add(SCORE.bucket * (ev.value || 1), 'bucket', ev.x, ev.y, ev.site); break
-        case 'heso': this.add(SCORE.heso, 'heso', ev.x, ev.y); break
-        case 'tulip': this.add(SCORE.tulip, 'tulip', ev.x, ev.y); break
-        case 'attacker': this.add(SCORE.attacker, 'attacker', ev.x, ev.y); break
+        case 'bucket': this.add(SCORE.bucket * (ev.value || 1) * tm, 'bucket', ev.x, ev.y, ev.site); break
+        case 'heso': this.add(SCORE.heso * tm, 'heso', ev.x, ev.y); break
+        case 'tulip': this.add(SCORE.tulip * tm, 'tulip', ev.x, ev.y); break
+        case 'attacker': this.add(SCORE.attacker * tm, 'attacker', ev.x, ev.y); break
         case 'warp': this.add(SCORE.warp, 'warp', ev.x, ev.y); break
         case 'koatari': this.add(SCORE.koatari, 'koatari', 0.220, 0.230); break
         case 'jackpot': this.add(SCORE.jackpot, 'jackpot', 0.220, 0.230); break

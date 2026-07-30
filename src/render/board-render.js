@@ -186,6 +186,7 @@ export class Renderer {
     this.nails(ctx, P, machine, dop)
     this.rippleLayer(ctx, P, dt)
     this.tulips(ctx, P, machine)
+    this.temperBarLayer(ctx, P, machine)
     this.attacker(ctx, P, machine)
     this.pockets(ctx, P, machine, dop)
     // Buckets decay on the frame clock, before they are drawn, so a site that
@@ -209,6 +210,41 @@ export class Renderer {
 
     ctx.restore()
     this._t += dt
+  }
+
+  /**
+   * THE TEMPER BAR — the sweeping quench carriage (machine.js owns the
+   * motion; this draws real state). The bar is NON-SOLID and the drawing says
+   * so: an open frame with a glowing interior, not a wall. Varnish law: the
+   * frame and its position are information (a player times launches to it)
+   * and survive at varnish 0 as luminance; the ember glow is lacquer.
+   */
+  temperBarLayer (ctx, P, m) {
+    const B = m.temperBar
+    if (!B) return
+    const bx = m.temperBarX
+    const x0 = this.X(bx - B.halfW), x1 = this.X(bx + B.halfW)
+    const y0 = this.Y(B.y - B.halfH), y1 = this.Y(B.y + B.halfH)
+    // Carriage rail across the whole travel — faint, fixed.
+    ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.22)
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(this.X(B.x0 - B.halfW), (y0 + y1) / 2)
+    ctx.lineTo(this.X(B.x1 + B.halfW), (y0 + y1) / 2)
+    ctx.stroke()
+    // The ember interior — lacquer only.
+    if (P.varnish > 0.01) {
+      const g = ctx.createLinearGradient(x0, y0, x0, y1)
+      g.addColorStop(0, `hsla(30 90% 55% / ${0.05 * P.varnish})`)
+      g.addColorStop(0.5, `hsla(38 95% 60% / ${0.22 * P.varnish})`)
+      g.addColorStop(1, `hsla(30 90% 55% / ${0.05 * P.varnish})`)
+      ctx.fillStyle = g
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+    }
+    // The open frame — luminance-borne, present at every varnish.
+    ctx.strokeStyle = hsl(38, 0.85 * P.varnish, 0.60)
+    ctx.lineWidth = Math.max(1, this.S(0.0012))
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0)
   }
 
   /** Draws the pulse set by rewardPulse(). Additive, edge-weighted, gated. */
@@ -1027,6 +1063,19 @@ export class Renderer {
       }
       ctx.fillStyle = g
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill()
+      // TEMPER RINGS — one thin halo per tier, the same varnish law as gold:
+      // hue is lacquer (warms with tier), but the ring's EXISTENCE and its
+      // brightness are luminance-borne, so a tempered ball reads tempered on
+      // the grey engineering drawing too. It is information — this ball's
+      // pockets score ×3 a ring — and information survives the switch.
+      if (b.temper > 0) {
+        for (let ti = 1; ti <= b.temper; ti++) {
+          const rr = r * (1.25 + ti * 0.28)
+          ctx.strokeStyle = hsl(48 - ti * 8, 0.85 * P.varnish, 0.58 + ti * 0.08)
+          ctx.lineWidth = Math.max(0.8, this.S(0.0010))
+          ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.stroke()
+        }
+      }
       // A spin tick, so the ball's rotation is visible. It is real state.
       ctx.strokeStyle = 'rgba(0,0,0,0.35)'
       ctx.lineWidth = 1
@@ -1077,14 +1126,15 @@ export class Renderer {
     // Published for hit-testing: the scale IS the base-power slider.
     this.dialRail = { x0: railL, x1: railR }
     ctx.strokeStyle = hsl(P.hue, P.saturation * 0.2, 0.26)
-    ctx.lineWidth = 1
+    ctx.lineWidth = 2
     ctx.beginPath(); ctx.moveTo(railL, mid + this.S(0.011)); ctx.lineTo(railR, mid + this.S(0.011)); ctx.stroke()
+    ctx.lineWidth = 1
     for (let i = 0; i <= 10; i++) {
       const x = railL + span * (i / 10)
       const big = i % 5 === 0
       ctx.beginPath()
       ctx.moveTo(x, mid + this.S(0.011))
-      ctx.lineTo(x, mid + this.S(big ? 0.017 : 0.014))
+      ctx.lineTo(x, mid + this.S(big ? 0.019 : 0.015))
       ctx.stroke()
     }
 
@@ -1093,8 +1143,10 @@ export class Renderer {
     // wide enough to see and to hit, and a pointer up to the scale. (A 3 px
     // triangle read as a readout; nobody dragged it. Review finding.)
     const baseX = railL + span * m.dial
-    const thW = Math.max(11, this.S(0.010))
-    const thH = Math.max(8, this.S(0.0068))
+    // Sized as the MAIN KNOB it is (operator's ruling): the thumb is the one
+    // continuous control in the game, so it gets a hand-sized handle.
+    const thW = Math.max(18, this.S(0.016))
+    const thH = Math.max(13, this.S(0.011))
     const thY = mid + this.S(0.0135)
     ctx.fillStyle = hsl(P.hue, P.saturation * 0.5, 0.62)
     ctx.beginPath()

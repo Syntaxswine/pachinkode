@@ -87,6 +87,7 @@ export const CUE_FAMILY = {
   impact: 'mechanism',
   split: 'mechanism',
   flap: 'mechanism',
+  temper: 'mechanism',
   launch: 'mechanism',
   ratchet: 'mechanism',
   foul: 'mechanism',
@@ -847,6 +848,28 @@ export class Synth {
     bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.2
     o.connect(bp).connect(g).connect(this.busImpacts)
     o.start(t); o.stop(t + 0.08)
+  }
+
+  /** A ball promoted a temper tier — an anvil ping that rises with the tier.
+   *  Family 'mechanism': it announces what happened to the STEEL, not money;
+   *  the money arrives later, at whatever pocket the tempered ball finds. */
+  temper (tier = 1, varnish = 1) {
+    this.mark('temper')
+    if (!this.ready) return
+    const v = clamp(varnish)
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const f0 = 1180 * Math.pow(1.26, tier - 1)   // a major-third-ish ladder
+    for (const [mult, amp] of [[1, 1], [2.76, 0.35]]) {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      o.frequency.setValueAtTime(f0 * mult, t)
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0.05 * amp * (0.45 + 0.55 * v), t)
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.16)
+      o.connect(g).connect(this.busImpacts)
+      o.start(t); o.stop(t + 0.18)
+    }
   }
 
   gate (open, varnish = 1) {

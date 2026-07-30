@@ -202,6 +202,7 @@ export function baseLoadout () {
     ballBonus: 0,
     quotaRelief: 0,
     goldBalls: false,   // GOLD BALLS — every launch splits at its first nail
+    temperBar: false,   // THE TEMPER BAR — sweeping non-solid promoter (machine.js)
 
     // bookkeeping — which parts produced this loadout
     parts: []
@@ -415,6 +416,22 @@ export const PARTS = [
       'operator asked for it that way, and no balance pass will ever file it down. The 裏物 ' +
       'has a ROM nobody inspected; this machine has a launcher that mints steel.',
     apply (L) { L.goldBalls = true }
+  },
+  {
+    id: 'temperbar',
+    name: 'THE TEMPER BAR',
+    jp: '焼入れ棒',
+    kind: 'ball',
+    weight: 6,
+    max: 1,
+    blurb: 'A slow bar sweeps the upper field. Balls that fall through it come out tempered — worth triple.',
+    detail: 'A quenching bar on a plotter carriage, back and forth on a seven-second clock. It ' +
+      'never touches the steel — a ball passes through and is promoted one temper tier, the same ' +
+      'promotion the windmills mint by contact. Tiers multiply what a ball\'s pockets SCORE ' +
+      '(×3 each, to ×27), never what they pay in balls, so the tray economy stands exactly ' +
+      'where the instruments measured it. Time the launch to the sweep and the rain falls ' +
+      'through annealed.',
+    apply (L) { L.temperBar = true }
   },
   {
     id: 'relief',

@@ -18,7 +18,10 @@ export const BOARD = {
   // Render-only strip below the playfield holding the launcher cutaway. Not part
   // of the simulated world — no ball ever enters it — but the mechanism it shows
   // is real state, read straight off the Machine.
-  cabinetH: 0.086,
+  // Deepened 0.086 → 0.104 (operator's ruling, 2026-07-30): the base slider
+  // is the game's one continuous control and its strip is the hit target —
+  // it earns the real estate. Render-only; the field above never moves.
+  cabinetH: 0.104,
   rail: { cx: 0.220, cy: 0.246, r: 0.206, gap: 0.0200 },
   railStart: 130,      // deg — where the ball enters the channel, bottom-left
   railInnerEnd: 250,   // deg — the threshold. See board.js's header note.
