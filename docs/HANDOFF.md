@@ -909,6 +909,16 @@ site scores in `--sites --cab tanukidai`; feed per motif-audit: eastLow 139 · e
 tail-curl 103 · heso 57 · wing 56 · eastDeep 47 · westDeep 18. The heso sits on the tanuki's
 literal navel, which is what the ヘソ has been called all along.
 
+**The operator's field report, after playing it:** the cabinet is fun, and the ear tulip is
+the board's strongest draft synergy — it sits high, in the crest rain, so "if you can get it
+open early there's a really high capture rate." On this spec nothing ANIMATES the wing
+(amadeji has no flapper), so "open early" means one thing: drafting STUCK TULIPS in the first
+back rooms, which wires the one wing open for the rest of the run. That makes STUCK TULIPS
+disproportionately strong on this cabinet specifically — position, not the part, is the power.
+Recorded as an observed strategy, deliberately untuned (fun-first; the operator found it and
+liked it). If it ever wants a counterweight, the lever is the wing's POSITION or the part's
+draft WEIGHT on motif cabinets, not the tulip pay.
+
 ## Left undone
 - **The run's seed is not surfaced.** A Run is fully reproducible from one integer — offers,
   floors, all of it — and nothing lets you read or type one. Daily runs and shared seeds are one
