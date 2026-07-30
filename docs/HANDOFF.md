@@ -1164,3 +1164,112 @@ because the ending is the easy part once the honesty is load-bearing.
 Keep the switch.
 
 — *Builder 3 · Claude Opus 5 · 2026-07-28*
+
+---
+
+# BUILDER 4 — THE SUMMIT AND THE MINT · 2026-07-30
+
+## The tree you are inheriting
+
+`3e32642` on main, pushed, Pages serving it. Verified at the moment of writing, not remembered:
+
+- `npm test` — **144 pass, 0 fail**
+- `node tools/loadout-audit.js` — clean, 301 boards, 0 traps
+- `node tools/motif-audit.js` — clean: every ladder state, every protected nail, every organ alive
+- `node tools/run-sim.js --curve` — crossover **floor 6**, floor-1 clear 100%, 23/24 won
+- `npm run canary` — quiet
+- golden board fingerprint `70d3ac89:500` — **unchanged** through every commit below
+
+Two arcs landed this session, in two commits.
+
+## What changed, and the one law each arc taught
+
+**`303261f` — the billion-point summit.** The operator ruled that floor 12 demands
+1,000,000,000 points. That makes the wall's two REAL design statements the base (3,700) and the
+summit, so `QUOTA_GROWTH` stopped being a hand-set number and became derived. The raw ratio that
+falls out (×3.117) is unclimbable — measured 0/24 — so the summit is reached by **THE
+DENOMINATION**: deeper floors pay bigger numbers, and quota ÷ denomination is the old measured
+wall exactly. Full section above.
+
+> **The law:** when a design statement and a measured curve disagree, do not pick one. Find the
+> variable that lets both be true. Here it was the units the floor pays in — the fight was never
+> the thing the operator was ruling on.
+
+**`3e32642` — temper.** The windmills mint value: a hard vane strike work-hardens a ball, and its
+tier multiplies what its pockets SCORE. The TEMPER BAR sweeps the upper field and promotes balls
+that fall through it — non-solid, deterministic, and a test pins that fitting it moves no ball to
+twelve decimals. Full section above.
+
+> **The law:** a moving part that TRANSFORMS rather than DEFLECTS costs nothing to prove safe.
+> The fingerprint, the audits and every calibration stood untouched because the bar never enters a
+> contact solve. Reach for transformation before geometry when a mechanic can be either.
+
+## Traps I set, or nearly fell into
+
+- **`scoreTier` must be fed FACE VALUE.** Both arcs inflate the printed number (the denomination
+  by floor, temper by tier). The colour ramp speaks relative worth, so every consumer divides the
+  inflation back out before tiering. Miss this and everything past floor ~7 is permanently
+  max-tier and the visual language dies silently — nothing fails, it just stops meaning anything.
+- **`EFFECTIVE_GROWTH`, not `QUOTA_GROWTH`, prices the sandbox.** Free play has no floors and
+  therefore no denomination; pricing parts off the raw wall ratio would make the shop climb at a
+  rate the wallet's earnings were never measured against. Test-pinned.
+- **`TEMPER_MIN_SPEED` is a MEASURED constant, not a feel.** Ungated, nearly every heso-bound ball
+  brushes a windmill and the difficulty crossover collapsed to floor 2. I tried three
+  configurations against `--curve` before one reproduced the baseline crunch. If you retune the
+  ladder, retune it there — the curve tool is the only opinion that counts.
+- **The float ceiling is real.** Overtime quotas pass `MAX_SAFE_INTEGER` around floor 24. The
+  ledger identity is exact in integer range; past it the numbers are honestly imprecise, which is
+  why `fmtScore` goes compact rather than printing twenty exact-looking digits of a float.
+
+## Left undone (reconciled — the older list above still stands except where struck)
+
+- **The moving basket.** The operator floated it alongside the temper bar; the bar won this
+  session because non-solid transformation composes with the fingerprint law for free. A moving
+  SOLID needs swept-volume gates — the motif-audit lesson applied in TIME rather than space — and
+  the temper bar's pattern (deterministic clock position + a once-per-ball flag) is already half
+  of it. This is the clearest next build.
+- **The mint tier is one-source-per-windmill and the bar is ungated.** Whether the bar SHOULD be
+  generous is a design question nobody has measured; it is currently the generous one on purpose
+  (windmills demand violence, the bar anneals).
+- **Per-motif route-odds tables** — still pre-registered, still unmeasured; TANUKIDAI still greys
+  its split honestly with `未測`.
+- **The run's seed is still not surfaced**, the chain-break rate is still unmeasured at all three
+  fire rates, and `tools/cue-contingency.mjs` still does not exist.
+- **The three keystones are still three sockets.** I added no fourth, deliberately. The
+  provenance ledger got its second and third consumers this session almost by accident — temper
+  and the denomination both flow through `add()`, so the receipt now knows what a tempered
+  deep-chain point on floor 10 was made of. Whoever builds the receipt screen will find it
+  richer than Builder 3 left it.
+
+## Maker's mark
+
+Both arcs were the same move, and I did not see it until the second one was working: **the
+operator names a number or an object, and the job is to find the variable that makes it true
+without moving anything that was measured.** A billion points at the summit — don't steepen the
+wall, change what a point is worth. Paddles that upgrade balls — don't add a solid, add a
+property the ball carries. Both times the constraint that felt like an obstacle (the difficulty
+curve; the golden fingerprint) turned out to be the thing that picked the design.
+
+What I want recorded is that **the curve tool overruled me twice in one hour** on temper. My
+first instinct — ×3 tiers, any vane strike — is a mechanic that would have felt wonderful for
+about four floors and then quietly deleted the crunch that three builders measured into this
+game. The tool said crossover 2 and I believed it over the feeling. That is the whole
+inheritance here working: Builder 3 built `--curve` to defend a difficulty shape from Builder 3,
+and it defended it from me.
+
+The thing I would tell the next builder: **this project's instruments are load-bearing and they
+are also cheap.** `--curve` is twenty seconds. The audits are under a minute. There is no version
+of "I'll measure it after" that is faster than measuring it now, and every trap in this document
+was found by an instrument that already existed before the feature did.
+
+**The forward dream.** Builder 3 wanted the score to become an argument. It is closer than it was
+— the score now has THREE things to say about itself (what pocket, what chain, what steel), and
+they compound in a way a player can feel but not yet read. The receipt is still unbuilt.
+
+But the thing I did not expect: the denomination made the late game legible to the player for the
+first time. A billion is a number a person can hold. When the receipt finally gets built, it will
+have a summit to point at.
+
+Keep the switch. Trust the tools over the feeling — that is what they were built for.
+
+— *Builder 4 · Claude Fable 5 · 2026-07-30*
