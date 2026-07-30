@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_BASE, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN, FLOOR1_EASE, SHOP, sandboxCabinet } from '../src/sim/run.js'
+import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_BASE, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN, FLOOR1_EASE, SHOP, sandboxCabinet, QUOTA_TOP, EFFECTIVE_GROWTH, DENOM_GROWTH, denomFor } from '../src/sim/run.js'
 import {
   baseLoadout, resolveLoadout, drawOffers, partAvailable, countPart,
   PARTS, PART_BY_ID, BUCKET_SITES, SITE_ORDER, BUCKET_MOUTH_MAX
@@ -491,7 +491,7 @@ test('the sandbox never meets a quota and never fails', () => {
   assert.equal(run.bank(), false, 'the sandbox banked — there is no next floor')
 })
 
-test('the shop sells a part, deducts the price, and escalates by the wall ratio', () => {
+test('the shop sells a part, deducts the price, and escalates by the effective ratio', () => {
   const run = sbx()
   sbxScore(run, QUOTA_BASE * 3)
   const wallet = run.score
@@ -503,9 +503,37 @@ test('the shop sells a part, deducts the price, and escalates by the wall ratio'
   assert.equal(run.score, wallet - price0, 'the wallet did not pay')
   assert.equal(run.spent, price0)
   assert.equal(run.loadout.parts.length, 1, 'paid and not fitted')
-  assert.equal(run.partPrice, Math.round(QUOTA_BASE * QUOTA_GROWTH),
-    'the price did not climb by the wall’s ratio')
+  assert.equal(run.partPrice, Math.round(QUOTA_BASE * EFFECTIVE_GROWTH),
+    'the price did not climb by the EFFECTIVE ratio — the sandbox has no denomination')
   assert.ok(run.offers && run.offers.length === 3, 'the shelf was not re-dealt')
+})
+
+test('the denomination: floor 12 demands exactly one billion, and the fight underneath never moved', () => {
+  // The summit is the operator's stated number, to the point.
+  assert.equal(quotaFor(FLOORS, null, 1), QUOTA_TOP,
+    'floor 12 must demand exactly 1,000,000,000')
+  // The EFFECTIVE wall — quota divided by the floor's denomination — is the
+  // old measured curve, byte-for-byte in ratio: 3,700 × 1.30^(floor−1).
+  for (let f = 2; f <= FLOORS + 6; f++) {
+    const eff = quotaFor(f, null, 1) / denomFor(f)
+    const old = QUOTA_BASE * Math.pow(EFFECTIVE_GROWTH, f - 1)
+    // quotaFor rounds to whole points; a half-point of rounding on floor 2's
+    // ~4,810 is 1e-4 of relative drift, so that is the bar, not exactness.
+    assert.ok(Math.abs(eff / old - 1) < 1e-4, `floor ${f} effective quota drifted: ${eff} vs ${old}`)
+  }
+  // Floor 1 pays face value; the sandbox always does.
+  assert.equal(denomFor(1), 1)
+})
+
+test('the denomination scales the score and the keystone identity survives it', () => {
+  const run = new Run({ key: 't', label: 't', spec: 'digi', difficulty: 1, parts: [] })
+  run.floor = 5
+  const n = run.add(SCORE.bucket, 'bucket')
+  assert.equal(n, Math.round(SCORE.bucket * run.loadout.bucketScore * run.loadout.scoreMult *
+    denomFor(5) * chainMult(1, run.loadout)), 'floor 5 must pay at floor 5 denomination')
+  for (let i = 0; i < 40; i++) run.add(SCORE.heso, 'heso')
+  const P = run.provenance
+  assert.equal(P.base + P.fromChain, run.score, 'base + fromChain !== score at depth')
 })
 
 test('the shop refuses a poor wallet and a non-sandbox run', () => {

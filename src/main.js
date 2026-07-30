@@ -13,10 +13,11 @@ import { Renderer, registerMotifArt } from './render/board-render.js'
 import { MOTIFS } from './sim/motifs.js'
 import { Synth } from './audio/synth.js'
 import { Hud } from './ui/hud.js'
-import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet } from './sim/run.js'
+import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet, denomFor } from './sim/run.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
 import { PART_BY_ID, countPart } from './sim/loadout.js'
 import { scoreTier } from './render/palette.js'
+import { fmtScore } from './format.js'
 
 const $ = (s) => document.querySelector(s)
 const SAVE_KEY = 'pachinkode.v1'
@@ -309,7 +310,7 @@ function syncRecords () {
     stat('mean score per run', m.runs ? fmt((m.lifetimeScore || 0) / m.runs) : '—')
 }
 
-const fmt = (n) => Math.round(n).toLocaleString('en-US')
+const fmt = fmtScore  // full digits below 1e13, the myriad ladder above — see format.js
 
 function syncCabinets () {
   const host = $('#cabList')
@@ -997,8 +998,12 @@ function drainRun () {
         // The numeral, thrown up where it was earned, sized and coloured by
         // how big it is. This is the operator's "numbers going up very
         // visibly", now with four orders of magnitude to express.
-        renderer.scorePop(ev.x, ev.y, ev.n, ev.chain)
-        if (ev.site) renderer.bucketHit(ev.site, scoreTier(ev.n))
+        // The floor's denomination is divided back out for TIERING so the
+        // colour ramp keeps speaking relative value; the printed number keeps
+        // its full inflated glory. Sandbox pays face value (denom 1).
+        const denom = run.sandbox ? 1 : denomFor(run.floor)
+        renderer.scorePop(ev.x, ev.y, ev.n, ev.chain, denom)
+        if (ev.site) renderer.bucketHit(ev.site, scoreTier(ev.n / denom))
         // Deep chains earn a kick and a lamp burst of their own — the board
         // noticing that something sustained is happening, which is precisely
         // what a chain is and what nothing else on the board reports.

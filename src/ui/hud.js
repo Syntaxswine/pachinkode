@@ -19,6 +19,7 @@
 // and feeding it (the multiplier that is most of their score).
 
 import { thresholdCrestSpeed, routeOdds, coinFlipDial } from '../sim/board.js'
+import { fmtScore } from '../format.js'
 
 const f1 = (x) => x.toFixed(1)
 const pct = (x) => (x * 100).toFixed(0) + '%'
@@ -150,20 +151,20 @@ export class Hud {
       this.rSpentRow.style.display = sb ? '' : 'none'
       if (sb) {
         this.rFloor.textContent = 'FREE PLAY — SCORE IS A WALLET'
-        this.rScore.textContent = Math.round(run.score).toLocaleString('en-US')
-        this.rSpent.textContent = Math.round(run.spent).toLocaleString('en-US')
+        this.rScore.textContent = fmtScore(run.score)
+        this.rSpent.textContent = fmtScore(run.spent)
       } else {
         const over = run.floor > 12
         this.rFloor.textContent = over ? `OVERTIME ${run.floor - 12}` : `FLOOR ${run.floor} OF 12`
-        this.rScore.textContent = Math.round(run.floorScore).toLocaleString('en-US')
-        this.rQuota.textContent = Math.round(run.quota).toLocaleString('en-US')
+        this.rScore.textContent = fmtScore(run.floorScore)
+        this.rQuota.textContent = fmtScore(run.quota)
         this.rBar.style.width = (run.progress * 100).toFixed(1) + '%'
         // The stylesheet has always promised a teal bar for a met quota; wire it.
         // It matters now that the floor keeps playing past the line — the panel
         // should agree with the floor bar about which side of it you are on.
         this.rBar.parentElement.classList.toggle('met', !!run.metQuota)
         this.rBalls.textContent = Math.max(0, run.ballsLeft)
-        this.rTotal.textContent = Math.round(run.score).toLocaleString('en-US')
+        this.rTotal.textContent = fmtScore(run.score)
       }
       // Every part fitted, named. A roguelike whose build is invisible is a
       // roguelike where the player cannot reason about the next pick.

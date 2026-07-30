@@ -106,7 +106,10 @@ export const CABINETS = {
     spec: 'loose',
     difficulty: 1.45,
     parts: ['refund', 'refund', 'bucket', 'bucket', 'widen', 'balls'],
-    unlock: { lifetimeScore: 250000 },
+    // Rescaled for THE DENOMINATION (run.js): 250,000 was ~3 runs to floor 5
+    // on the old face-value scale; 5,000,000 is the same journey now that
+    // deep floors pay in inflated points (floor-6 cumulative ≈ 1.6M/run).
+    unlock: { lifetimeScore: 5000000 },
     note: 'The "rights machine": winning buys you the RIGHT to win, and it pays in balls ' +
       'rather than points. Half of everything the board pays comes back as another launch, ' +
       'against a wall half again as tall.'
@@ -131,7 +134,10 @@ export const CABINETS = {
     difficulty: 2.1,
     parts: ['lifenails', 'lifenails', 'lifenails', 'warp', 'warp', 'warp', 'widen', 'widen',
       'mult', 'mult', 'bucket', 'bucket', 'bucket', 'refund', 'balls', 'bucketvalue'],
-    unlock: { wins: 1, lifetimeScore: 1000000 },
+    // A LIFETIME BILLION — the same number as the summit (QUOTA_TOP), and the
+    // same relationship as the old 1M gate: the required win itself supplies
+    // it, so the number is a boast on the card, not a second wall.
+    unlock: { wins: 1, lifetimeScore: 1000000000 },
     note: 'A back-room machine with the ROM swapped and every nail bent. Nothing on this ' +
       'board would pass an inspection. The wall is twice as tall and you will not notice.'
   }

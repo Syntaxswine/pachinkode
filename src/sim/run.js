@@ -240,9 +240,44 @@ export function newProvenance () {
 // the shape of the curve while doing it. If floor 4 is wrong, the ratio is
 // wrong, and the ratio is one number.
 export const QUOTA_BASE = 3700
-export const QUOTA_GROWTH = 1.30
-export const BALLS_BASE = 160
 export const FLOORS = 12          // survive twelve and the run is CLEARED
+// The wall's TOP is the stated design number (operator's ruling, 2026-07-30):
+// floor 12 demands one BILLION points, and every floor below scales down from
+// there. The growth ratio is therefore DERIVED, not chosen — pin the base
+// (floor 1's feel) and the summit, and the ratio is what connects them:
+// (1e9 / 3700)^(1/11) ≈ 3.117 per floor. The old hand-set 1.30 put floor 12
+// at 66,310, which a mid-run board cleared on 1% of its tray — the late wall
+// had stopped existing. One number still rules the whole curve; it is just
+// computed from the two numbers that are actually design statements.
+export const QUOTA_TOP = 1_000_000_000
+export const QUOTA_GROWTH = Math.pow(QUOTA_TOP / QUOTA_BASE, 1 / (FLOORS - 1))
+export const BALLS_BASE = 160
+
+// ── THE DENOMINATION ────────────────────────────────────────────────────────
+//
+// A raw ×3.117 wall is unclimbable: measured 0/24 runs won, everyone dead by
+// floor 4, because the player's power curve (parts ×1.30 each, picks rising
+// quadratically) cannot chase that exponent — the same parallel-lines lesson
+// this file already records. The EFFECTIVE difficulty ratio the whole game
+// was tuned against is 1.30, and it stays 1.30.
+//
+// What rises instead is the DENOMINATION: deeper floors pay bigger numbers,
+// the way the high-stakes machines live deeper in the hall. Every point a
+// floor pays is multiplied by DENOM_GROWTH^(floor−1), so the wall's summit
+// reads one billion while the fight underneath is byte-for-byte the measured
+// curve: quota/denom = 3,700 × 1.30^(floor−1), the old wall exactly.
+//
+// The denomination lives HERE, in add(), Run-side — the Machine never sees
+// it (the varnish law holds), and the sandbox never applies it (free play
+// has no floors; its wallet stays on the anchor scale, which is why
+// partPrice below grows by EFFECTIVE_GROWTH, not the raw wall ratio).
+export const EFFECTIVE_GROWTH = 1.30
+export const DENOM_GROWTH = QUOTA_GROWTH / EFFECTIVE_GROWTH
+
+/** The score multiplier a floor's denomination applies to every point. */
+export function denomFor (floor) {
+  return Math.pow(DENOM_GROWTH, floor - 1)
+}
 
 // The first floor is an ON-RAMP (operator's ruling): easy to finish, and
 // worth exactly one part — see surplusPicks. The ease is a named factor on
@@ -391,7 +426,11 @@ export class Run {
     this.chainT = 0
     if (this.chain > this.bestChain) this.bestChain = this.chain
     const kindMult = kind === 'bucket' ? L.bucketScore : kind === 'heso' ? L.hesoScore : 1
-    const n = Math.round(base * kindMult * L.scoreMult * this.mult)
+    // The floor's denomination scales BOTH n and flat below from the same
+    // quantity, so the keystone identity base + fromChain === score survives
+    // the billion-point summit exactly as it survived the hundreds.
+    const denom = this.sandbox ? 1 : denomFor(this.floor)
+    const n = Math.round(base * kindMult * L.scoreMult * denom * this.mult)
     this.score += n
     this.floorScore += n
     this.totalEvents++
@@ -402,7 +441,7 @@ export class Run {
     // both from the same quantity is what makes base + fromChain === score
     // hold exactly rather than approximately, which a test pins.
     const P = this.provenance
-    const flat = Math.round(base * kindMult * L.scoreMult)
+    const flat = Math.round(base * kindMult * L.scoreMult * denom)
     P.bySource[kind] = (P.bySource[kind] || 0) + n
     P.byOrigin[SCORE_ORIGIN[kind] || 'aimed'] += n
     P.base += flat
@@ -543,7 +582,8 @@ export class Run {
   // Free play's score is a WALLET (operator's ruling): trade it for parts or
   // for balls. The prices are not invented numbers —
   //
-  //   A part costs what the wall grows by: QUOTA_BASE × QUOTA_GROWTH^owned.
+  //   A part costs what the wall EFFECTIVELY grows by:
+  //   QUOTA_BASE × EFFECTIVE_GROWTH^owned (see THE DENOMINATION above).
   //   The anchor is QUOTA_BASE itself — the curve's base constant, which is
   //   floor 2's quota divided by one growth step, NOT floor 1's quota (the
   //   on-ramp ease halves that; a review caught this prose claiming
@@ -563,7 +603,11 @@ export class Run {
   // which books them on the machine's own honest ledger line.
 
   get partPrice () {
-    return Math.round(QUOTA_BASE * Math.pow(QUOTA_GROWTH, this.loadout.parts.length))
+    // EFFECTIVE_GROWTH, not the raw wall ratio: the sandbox has no
+    // denomination, so its price curve must climb at the rate the wallet's
+    // earnings were measured against — the effective difficulty, not the
+    // billion-point summit's nominal exponent.
+    return Math.round(QUOTA_BASE * Math.pow(EFFECTIVE_GROWTH, this.loadout.parts.length))
   }
 
   /** Lay out the shop's shelf. Callable any time in the sandbox. */

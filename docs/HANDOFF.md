@@ -957,6 +957,44 @@ to decide which — my honest read is that the two receipts (what it paid you fo
 you) are now close enough together that building them as one screen is a smaller job than any of
 the three sockets was.
 
+## 2026-07-30 — THE BILLION-POINT SUMMIT (the denomination)
+
+The operator's ruling: **floor 12 demands 1,000,000,000 points, and the difficulty scales down
+from there.** Two design statements — the base (3,700, floor 1's feel) and the summit — so the
+growth ratio is now DERIVED, not chosen: `QUOTA_GROWTH = (1e9/3700)^(1/11) ≈ 3.117`.
+
+A raw ×3.117 wall was measured first and it killed everyone: 0/24 runs won, dead by floor 4 —
+the parallel-lines lesson run.js already records, at a steeper angle. The fix is **THE
+DENOMINATION** (`denomFor` in run.js): deeper floors pay bigger numbers, the way the
+high-stakes machines live deeper in the hall. Every point a floor pays is ×`DENOM_GROWTH^(floor−1)`
+with `DENOM_GROWTH = QUOTA_GROWTH / EFFECTIVE_GROWTH (1.30)`, so quota/denomination is the OLD
+measured wall byte-for-byte in ratio. Re-measured: the curve table reproduces the baseline
+exactly — same clear rates, same cost columns, crossover still floor 6, 23/24 won — and floor 12's
+quota prints exactly 1,000,000,000.
+
+What the denomination touches, and what it must never touch:
+
+- **It lives in `Run.add()` only.** The Machine never sees it (the varnish law holds); the
+  sandbox never applies it (free play has no floors), which is why `partPrice` now grows by
+  `EFFECTIVE_GROWTH`, not the raw wall ratio — a test pins this.
+- **Tiers divide it back out.** `scoreTier` speaks face value: `scorePop`/`bucketHit`/the topbar
+  pass `n / denomFor(floor)` for COLOUR while displaying the inflated number. Without this,
+  every event from floor ~7 on is max-tier and the colour language dies.
+- **The keystone identity survives** (`base + fromChain === score`) because `n` and `flat` are
+  rounded from the same denominated quantity — a test pins that at depth too.
+- **`src/format.js`** is the one formatter: full commas below 1e13 (the billion is a spectacle,
+  every digit shows), the Japanese myriad ladder (億兆京垓𥝱穣) above — overtime quotas pass 1e15
+  by floor 19 and scores reach the sextillions, where full digits are noise and, past
+  `MAX_SAFE_INTEGER`, a lie. Compact display is the honest face of a float.
+- **Lifetime unlock gates rescaled**: KENRIMONO 250k → 5,000,000 (same ~three-runs-to-floor-5
+  journey at the new prices); URAMONO 1M → 1,000,000,000 (a lifetime billion — the same number
+  as the summit, still supplied by the required win itself, a boast not a wall).
+
+Known residue: overtime scores beyond ~1e16 are floats and honestly imprecise; the ledger
+identity is exact in integer range and drifts only where the display has already gone compact.
+139 tests, canary quiet, verified live: floor 12 panel reads 1,990,652 / 1,000,000,000 for one
+bucket, and the myriad ladder engages at exactly 10兆.
+
 ## An observation from the operator, recorded because it is a real finding
 
 Listening to a run at the ARCADE rate: *"the rapid sound of the balls being shot sounds like a

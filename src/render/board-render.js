@@ -18,6 +18,8 @@
 import { framePalette, trailColour, rippleColour, valueColour, hsl, scoreColour, scoreTier } from './palette.js'
 import { BOARD, coinFlipDial, routeOdds } from '../sim/board.js'
 import { WAVE, waveW } from '../sim/machine.js'
+import { denomFor } from '../sim/run.js'
+import { fmtScore } from '../format.js'
 
 // Artwork registry for motif boards — RENDER-SIDE ONLY, keyed by motif id.
 // The sim's motif objects carry geometry and never an image (design law L4;
@@ -843,7 +845,7 @@ export class Renderer {
     const x0 = this.X(0.014), x1 = this.X(BOARD.w - 0.014)
     const y = this.Y(0.006)
     const p = run.progress
-    const t = scoreTier(run.quota / 10)
+    const t = scoreTier(run.quota / denomFor(run.floor || 1) / 10)
     ctx.fillStyle = hsl(P.hue, P.saturation * 0.2, 0.20)
     ctx.fillRect(x0, y, x1 - x0, 3)
     ctx.fillStyle = p >= 1 ? scoreColour(0, P.varnish, 1, 1) : scoreColour(0, P.varnish, 0.95, t)
@@ -869,8 +871,12 @@ export class Renderer {
    * what the machine gave you. A score is what the run decided that was worth.
    * They appear together at the same pocket and they are allowed to disagree.
    */
-  scorePop (x, y, n, chain = 1) {
-    this.scorePops.push({ x, y, n, chain, t: 0, tier: scoreTier(n) })
+  scorePop (x, y, n, chain = 1, denom = 1) {
+    // The floor's denomination inflates every printed number (see run.js);
+    // the TIER divides it back out, so the colour ramp keeps speaking
+    // relative value — a deep floor prints billions but a heso is still a
+    // heso-coloured heso. Display keeps the big number; colour keeps the truth.
+    this.scorePops.push({ x, y, n, chain, t: 0, tier: scoreTier(n / (denom || 1)) })
   }
 
   scorePopLayer (ctx, P, dt) {
@@ -896,7 +902,7 @@ export class Renderer {
       ctx.fillStyle = P.varnish > 0.01
         ? scoreColour(s.n, P.varnish, a, s.tier)
         : `hsla(0 0% 86% / ${a})`
-      ctx.fillText(s.n.toLocaleString('en-US'), this.X(s.x), this.Y(s.y) - rise)
+      ctx.fillText(fmtScore(s.n), this.X(s.x), this.Y(s.y) - rise)
       ctx.restore()
     }
   }
