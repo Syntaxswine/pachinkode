@@ -37,6 +37,39 @@ export const EFFECTS_PROFILE = Object.freeze({
   reduced: Object.freeze({ motion: 0, flash: 0.18, lamps: 0.24, rewardWash: 0, shake: 0 })
 })
 export const effectsProfile = reduced => reduced ? EFFECTS_PROFILE.reduced : EFFECTS_PROFILE.full
+
+/**
+ * Where the marquee's forty-eight lamps sit, in board metres.
+ *
+ * A pure function rather than a loop buried in the draw call, because two
+ * things about it have to stay checkable by a test rather than by eye:
+ *
+ *   1. NO LAMP MAY BE INSIDE THE RAIL. The side columns originally sat at
+ *      x = 0.421 / 0.019 — |dx| = 0.201 from the rail centre, inside the outer
+ *      wall at r = 0.206, and therefore inside the 20 mm launch channel. Six
+ *      of the forty-eight were painted over every ball climbing to the top. A
+ *      marquee is furniture on the CABINET; the field belongs to the steel.
+ *   2. NO LAMP MAY COVER THE READOUT. A motif board moves its lottery display
+ *      up into the top strip, and four of the top lamps landed inside it —
+ *      lighting on the digits during a REACH, the one moment the player most
+ *      needs to read them. The readout wins; a lamp that lands on it does not
+ *      exist.
+ *
+ * See test/marquee.test.js, which asserts both against the real BOARD geometry
+ * and every shipped motif rather than against copies of these numbers.
+ */
+export function marqueeLamps (displayRect = null) {
+  const pos = []
+  const top = 14, side = 10, bottom = 14
+  for (let i = 0; i < top; i++) pos.push({ x: 0.022 + 0.396 * i / (top - 1), y: 0.023 })
+  for (let i = 1; i <= side; i++) pos.push({ x: 0.433, y: 0.023 + 0.420 * i / (side + 1) })
+  for (let i = bottom - 1; i >= 0; i--) pos.push({ x: 0.022 + 0.396 * i / (bottom - 1), y: 0.453 })
+  for (let i = side; i >= 1; i--) pos.push({ x: 0.007, y: 0.023 + 0.420 * i / (side + 1) })
+  const D = displayRect
+  if (!D) return pos
+  return pos.filter(p => !(p.x >= D.x0 - 0.004 && p.x <= D.x1 + 0.004 &&
+                           p.y >= D.y0 - 0.004 && p.y <= D.y1 + 0.004))
+}
 export const effectsPhase = (phase, reduced) => reduced ? 0.5 : phase
 
 // ── the route recorder (operator's design, 2026-07-28) ──────────────────────
@@ -209,7 +242,7 @@ export class Renderer {
     this.trailsAndBalls(ctx, P, machine, dop, dt)
     this.flashLayer(ctx, P, dt, effects)
     this.lamps(ctx, P, machine, dop, dt, effects)
-    this.spectacleFront(ctx, P, show, reducedEffects)
+    this.spectacleFront(ctx, P, show, reducedEffects, machine)
     this.popupLayer(ctx, P, dt)
     this.scorePopLayer(ctx, P, dt)
     this.chainMeter(ctx, P, run)
@@ -252,18 +285,15 @@ export class Renderer {
    * chases and blooms rather than on/off strobes; reduced mode freezes their
    * travel and lowers the bloom while preserving the fact a scene is active.
    */
-  spectacleFront (ctx, P, show, reduced) {
+  spectacleFront (ctx, P, show, reduced, m = null) {
     if (!show || show.intensity <= 0.01 || P.varnish <= 0.01) return
-    const pos = []
-    const top = 14, side = 10, bottom = 14
-    for (let i = 0; i < top; i++) pos.push({ x: 0.022 + 0.396 * i / (top - 1), y: 0.023 })
-    for (let i = 1; i <= side; i++) pos.push({ x: 0.421, y: 0.023 + 0.420 * i / (side + 1) })
-    for (let i = bottom - 1; i >= 0; i--) pos.push({ x: 0.022 + 0.396 * i / (bottom - 1), y: 0.453 })
-    for (let i = side; i >= 1; i--) pos.push({ x: 0.019, y: 0.023 + 0.420 * i / (side + 1) })
+    const pos = marqueeLamps(m && m.parts && m.parts.motif && m.parts.motif.displayRect)
     const N = pos.length
     const t = reduced ? 0.18 : (show.time || 0)
     const phase = effectsPhase(show.phase, reduced)
-    const strength = show.intensity * P.varnish * (reduced ? 0.38 : 1)
+    // The comfort mode's published contract is 18–24%; the marquee is the
+    // largest new light layer in the build and was running at 38%.
+    const strength = show.intensity * P.varnish * (reduced ? EFFECTS_PROFILE.reduced.lamps : 1)
     for (let i = 0; i < N; i++) {
       const u = i / N
       let b = 0.25

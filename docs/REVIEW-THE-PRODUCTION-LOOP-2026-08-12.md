@@ -254,6 +254,110 @@ to swap the unlock order so the weaker board is the earlier one.
 
 ---
 
+## Addendum — what fifteen cold readers found, including two corrections to the above
+
+Everything above was mine. I then ran six independent hostile lenses over the same diff, refuted
+every finding adversarially, and put a completeness critic behind them: 42 raw findings, 37
+unique, 8 verified, **3 confirmed, 5 refuted**, plus 6 more from the critic.
+
+The result is the lesson this project already has on file as *self-review converges on the
+reviewer*. My six passes found every problem in the **instruments** — my own specialty, and my
+own bias, since I wrote most of them — and missed almost everything in the **renderer**. The
+three most serious defects in the whole diff are rendering defects, and cold readers found all
+three.
+
+### Corrections to my findings
+
+**Finding 1 was too strong.** I wrote that the conditioning metric "cannot discriminate". A
+refuter forced every voice onto a common five-second horizon and the families *do* separate by
+about 3×: predictive 173/173 = 100%, mechanism aggregate 48,185/54,034 = 89.2%, `launch`
+(n = 1500) = 83.9% — exactly chance — and `foul` (n = 230) = **0.0%**. A metric that puts one
+voice at the ceiling and another at the floor is working. What survives is narrower and still
+real: the printed lift is **not portable across session lengths** (+1 / +16 / +49 pp at 1200 /
+1500 / 3000 launches), and the shipped receipt prints **+0%** on a real floor.
+
+And the confirmed finding underneath it is better than mine: `baseChance()` normalises by
+**wall-clock session time**, including time when nothing was on the board and no cue could
+possibly have fired. In production the clock is `sessionClock`, which advances on every frame
+the player is on the play screen — *firing or not*. So the receipt's headline scales with how
+much of your session you spent idle: a player who fires half the time sees roughly +16pp where
+the honest figure is +3pp. Duty-corrected, mechanism contingency is stable at +3.0 to +4.5pp
+across a 15× range of session length — which is the number the taxonomy's own law predicts.
+
+**Finding 4 was over-generalised.** Two corrections, both measured:
+
+* **A foul costs nothing.** It refunds the token *and* the run's ball (`machine.js:795`,
+  `run.js:716`). About 160 balls entered play in both arms of my table; the 206 fouls consumed no
+  balls, no tokens and no score. The jam's only currency is **wall-clock seconds**, which is
+  exactly what the part's own blurb promises. So "AUTO deletes a mechanic" is true but much
+  smaller than I implied.
+* **The jam is not monotonic in density and it survives.** At dial 0.18: 0.6 s → 0.8%, 0.2 s →
+  56%, 0.1 s → **85.5%** (worse), 0.0667 s → 25.5%, 0.0333 s → 0%. And at the densest column the
+  game can reach (STORM + AUTO) the jam is still 89% at dial 0.14. My table only sampled dials
+  ≥ 0.20, which is above where the jam lives.
+
+The same refutation produced the best argument *for* my recommendation, which I had missed
+entirely: **REGULATION + AUTO (0.6 / 3 = 0.2 s) reproduces ARCADE-manual to the digit** — 94.5 /
+82.9 / 56.0 / 59.6 / 0.0% across five dials, identical. AUTO HANDLE writes the same
+`machine.fireInterval` the free three-position rate switch writes; the sim cannot tell where the
+number came from. It is one notch past STORM on an axis the options menu has exposed for free
+since long before this diff. That is a much stronger case for taking it out of the draft than
+anything I had.
+
+### Three rendering defects — found by cold readers, verified by me, and fixed
+
+**a. Handing the lights to a new scene blacked the whole field out first.** `trigger()` refuses
+only *lower* priority, and pocket chatter is same-priority — so every pocket restarted the live
+scene at `age = 0`, and `snapshot()` re-attacked from ~12% over 140 ms. `intensity` is the sole
+gate on all 48 marquee lamps *and* the full-field rays, so the entire board went dark and came
+back inside a seventh of a second. Driving the real director from the real machine's events:
+**122 collapses in 300 s (0.41/s), four inside the busiest second** — above the three-per-second
+flash threshold at its peak — and REDUCED EFFECTS did *not* remove it, because that mode dims and
+freezes travel while `intensity` still comes from the attack.
+
+Fixed by carrying the outgoing scene's brightness in as the incoming scene's attack floor, so a
+hand-over is monotonic. Re-measured: **0 collapses in 300 s.** A cold start still attacks
+normally.
+
+**b. Six of the forty-eight lamps were inside the field.** The side columns sat at |dx| = 0.201
+from the rail centre; the outer wall is at r = 0.206 and the launch channel is the 20 mm annulus
+inside it. So `right5/6/7` and `left5/6/7` were painted **over every ball climbing to the top**.
+Moved to |dx| = 0.213, outside the wall and still on the plate.
+
+**c. Four top lamps sat on the motif boards' lottery readout.** Both TANUKIDAI and KAWADAI
+relocate the display to `{x0: 0.307 … x1: 0.434, y0: 0.010 … y1: 0.056}`, and `top10`–`top13`
+land inside it — lighting on the digits during a REACH, the one moment the readout matters. The
+readout now wins.
+
+The ring is extracted as `marqueeLamps(displayRect)` so all three properties are checkable, and
+`test/marquee.test.js` asserts them against the real `BOARD.rail` and every shipped motif rather
+than against copies of the numbers — author a new picture board and the lamps re-check for free.
+All three tests were mutation-tested: each fails when its fix is reverted.
+
+Also fixed while in there: the reduced-mode marquee ran at **0.38** against a published contract
+of 18–24%; it now uses `EFFECTS_PROFILE.reduced.lamps` (0.24), which is what the option text
+promises.
+
+### Still open, not fixed
+
+* **`jackpotBuild` demonstrably fails the exit-1 reward gate under the pre-diff taxonomy.** A
+  reviewer re-ran the tool's own harness with the four `CUE_FAMILY` entries restored to `reward`
+  and got `FAIL: unbacked reward cues — jackpotBuild 0/1`. That is the empirical proof for
+  finding 3: the reclassification turned a failing gate into a passing one, in the same commit
+  that built the gate. It may still be the right call — but it should be a recorded decision,
+  not a side effect.
+* **The 0.58 reach boundary is four unlinked copies of a rendering constant.** `STOP[1]` is a
+  module-local `const` in `board-render.js`; `machine.js:904` now hard-codes `0.58` to gate a
+  *sim* event, `board-render.js:1529` writes it a third time as a bare literal, and
+  `machine.js:968` puts a rendering-shaped member (`reachRevealed`) on the spin record. Retune
+  the reel schedule — the file explicitly invites it — and sound leaks ahead of picture with all
+  163 tests still green. Export the constant.
+* **No minimum-n guard** on the contingency table: at `--balls 1500` five rows ship at n ≤ 2,
+  including four printing `100.0%` and a lift from a single observation.
+* **`Run.elapsed`** is written every frame of every run and read by nothing.
+
+---
+
 ## Where I would take it
 
 One observation frames all of these. **This pass added a scene director, forty-eight lamps, and a
