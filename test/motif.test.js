@@ -85,3 +85,17 @@ test('inSilhouette agrees with the contour on obvious points', () => {
   assert.ok(inSilhouette(t, t.heso.x, t.heso.y - 0.02), 'the belly is inside')
   assert.ok(!inSilhouette(t, 0.05, 0.10), 'the far corner is outside')
 })
+
+test('KAWADAI builds a genuinely wide central river and stamps it onto a run', () => {
+  const L = resolveLoadout([], null, MOTIFS.kawa)
+  const { world, parts } = buildBoard(L)
+  assert.equal(parts.motif, MOTIFS.kawa)
+  assert.ok(world.nails.length > MOTIFS.kawa.minNails)
+  assert.ok(inSilhouette(MOTIFS.kawa, 0.220, 0.285), 'the centre of the river is not open')
+  let width = 0
+  for (let x = 0.05; x <= 0.39; x += 0.002) if (inSilhouette(MOTIFS.kawa, x, 0.285)) width += 0.002
+  assert.ok(width >= 0.12, `central river is only ${(width * 1000).toFixed(0)}mm wide`)
+  assert.ok(parts.housing.x1 - parts.housing.x0 < 0.10, 'the river cabinet kept a large centre housing')
+  const run = new Run(CABINETS.kawadai, 17)
+  assert.equal(run.loadout.motif, MOTIFS.kawa)
+})

@@ -8,14 +8,17 @@
 
 import { Machine, SPECS, FIRE_RATES, LAUNCH_INTERVAL, TULIP_PAY } from './sim/machine.js'
 import { BOARD, thresholdCrestSpeed, routeOdds, foulOdds } from './sim/board.js'
-import { Dopamine } from './sim/dopamine.js'
+import { Dopamine, bernoulliUncertainty } from './sim/dopamine.js'
 import { Renderer, registerMotifArt } from './render/board-render.js'
+import { PresentationDirector } from './render/presentation.js'
+import { riverFestivalArt } from './render/motif-art.js'
 import { MOTIFS } from './sim/motifs.js'
 import { Synth } from './audio/synth.js'
+import { ConditioningLedger, formatConditioningSummary } from './audio/conditioning.js'
 import { Hud } from './ui/hud.js'
 import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet, denomFor } from './sim/run.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
-import { PART_BY_ID, countPart } from './sim/loadout.js'
+import { PART_BY_ID, countPart, autoFireInterval } from './sim/loadout.js'
 import { scoreTier } from './render/palette.js'
 import { fmtScore } from './format.js'
 
@@ -27,6 +30,7 @@ const state = {
   spec: 'amadeji',
   rate: 'arcade',
   varnish: 1,
+  effects: 'full',
   vol: { master: 0.70, impacts: 0.55, rewards: 0.80, bed: 0.35 },
   muted: false,
   tokens: 500,
@@ -37,10 +41,14 @@ const state = {
 }
 
 function load () {
+  let saved = null
   try {
     const raw = localStorage.getItem(SAVE_KEY)
-    if (raw) Object.assign(state, JSON.parse(raw))
+    if (raw) Object.assign(state, saved = JSON.parse(raw))
   } catch { /* a corrupt save is not worth a crash */ }
+  if ((!saved || !Object.hasOwn(saved, 'effects')) && globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    state.effects = 'reduced'
+  }
   // A screen is session state, not a setting. Persisting it once let a
   // mid-play refresh restore screen:'play' behind a title-screen DOM with a
   // null machine — Space or T then threw on nothing (review find).
@@ -60,10 +68,10 @@ function save () {
   // `meta` is on the list and a RUN is not — a run in progress is session
   // state, and a roguelike that silently restores one is a roguelike whose
   // death is optional.
-  const { spec, rate, vol, muted, tokens, lifetime, meta } = state
+  const { spec, rate, vol, muted, effects, tokens, lifetime, meta } = state
   try {
     localStorage.setItem(SAVE_KEY,
-      JSON.stringify({ spec, rate, vol, muted, tokens, lifetime, meta }))
+      JSON.stringify({ spec, rate, vol, muted, effects, tokens, lifetime, meta }))
   } catch { /* private mode */ }
 }
 load()
@@ -81,17 +89,23 @@ registerMotifArt('tanuki', {
   w: MOTIFS.tanuki.img.w, h: MOTIFS.tanuki.img.h,
   alpha: 0.34
 })
+registerMotifArt('kawa', { draw: riverFestivalArt, alpha: 1 })
 const synth = new Synth()
+const show = new PresentationDirector()
+const conditioning = new ConditioningLedger()
+synth.setCueObserver(cue => conditioning.cue(cue))
 const hud = new Hud($('#panel'))
 let machine = null
 let dop = null
 let run = null                 // the roguelike layer, or null in FREE PLAY
 let firingHeld = false
+let autoLatched = false
 let lastT = 0
 let impactsThisFrame = 0
 let bannerTimer = 0
 let lastDetent = -1
 let sliderHinted = false
+let sessionClock = 0
 
 const interval = () => (FIRE_RATES[state.rate] || FIRE_RATES.arcade).interval
 
@@ -103,6 +117,9 @@ const interval = () => (FIRE_RATES[state.rate] || FIRE_RATES.arcade).interval
  * the same bar a real run banks from.
  */
 function newSession () {
+  show.reset()
+  autoLatched = false
+  resetConditioning()
   run = new Run(sandboxCabinet(state.spec), (Math.random() * 1e9) | 0)
   machine = new Machine({
     seed: (Math.random() * 1e9) | 0,
@@ -126,6 +143,9 @@ function newSession () {
 // ── the run ────────────────────────────────────────────────────────────────
 
 function startRun (cabKey) {
+  show.reset()
+  autoLatched = false
+  resetConditioning()
   run = new Run(CABINETS[cabKey], (Math.random() * 1e9) | 0)
   state.cab = cabKey
   buildFloor()
@@ -147,6 +167,7 @@ function startRun (cabKey) {
  * lane that no longer exists.
  */
 function buildFloor () {
+  if (!run.loadout.autoFire) autoLatched = false
   machine = new Machine({
     seed: (Math.random() * 1e9) | 0,
     spec: run.cabinet.spec,
@@ -164,6 +185,14 @@ function buildFloor () {
   // Routes describe a board; this is a new board.
   renderer.routeLog.length = 0
   renderer.fades.length = 0
+  show.trigger('floor')
+}
+
+function resetConditioning () {
+  sessionClock = 0
+  conditioning.reset()
+  synth.resetCues()
+  synth.setClock(0)
 }
 
 // ── screens ────────────────────────────────────────────────────────────────
@@ -585,6 +614,26 @@ function endRun () {
     : `Floor ${deepest} wanted ${fmt(run.quota)} and the tray ran out ` +
       `${fmt(run.quota - run.floorScore)} short. ${run.loadout.parts.length} parts fitted; ` +
       `longest chain ${run.bestChain}.`
+
+  const P = run.provenance
+  const originTotal = (P.byOrigin.aimed || 0) + (P.byOrigin.lottery || 0)
+  const share = n => originTotal > 0 ? Math.round(n / originTotal * 100) : 0
+  const top = Object.entries(P.bySource).sort((a, b) => b[1] - a[1])[0]
+  $('#roProv').textContent = originTotal
+    ? `${share(P.byOrigin.aimed)}% came from pockets you could aim at; ` +
+      `${share(P.byOrigin.lottery)}% came from the lottery. The chain created ` +
+      `${Math.round(P.fromChain / originTotal * 100)}% of the total. ` +
+      `Largest source: ${top ? top[0].toUpperCase() + ' (' + fmt(top[1]) + ')' : 'none'}.`
+    : 'No score entered the ledger.'
+  const C = conditioning.summary(sessionClock)
+  const words = formatConditioningSummary(C)
+  $('#roCondition').textContent = `${words.reward}. ${words.predictive}. ${words.mechanism}.`
+  const netBalls = Math.max(0, run.totalLaunched - run.totalFouls)
+  $('#roCost').textContent = `${netBalls.toLocaleString('en-US')} balls entered play; ` +
+    `${run.totalFouls.toLocaleString('en-US')} fouls were returned. At ¥4 a ball, the playable ` +
+    `steel cost ¥${(netBalls * 4).toLocaleString('en-US')}. The machine logged ` +
+    `${C.totalCues.toLocaleString('en-US')} audible cue events and ` +
+    `${C.totalPays.toLocaleString('en-US')} payouts.`
   const host = $('#roUnlocks')
   host.textContent = ''
   for (const k of unlocked) {
@@ -630,6 +679,20 @@ const syncMute = () => {
 muteBtn.addEventListener('click', () => { state.muted = !state.muted; syncMute(); save() })
 syncMute()
 
+const effectSegs = $('#effectSegs')
+function syncEffects () {
+  for (const b of effectSegs.children) b.setAttribute('aria-pressed', String(b.dataset.effects === state.effects))
+  document.body.classList.toggle('reduced-effects', state.effects === 'reduced')
+}
+for (const [key, label] of [['full', 'FULL SHOW'], ['reduced', 'REDUCED EFFECTS']]) {
+  const b = document.createElement('button')
+  b.textContent = label
+  b.dataset.effects = key
+  b.addEventListener('click', () => { state.effects = key; syncEffects(); save() })
+  effectSegs.appendChild(b)
+}
+syncEffects()
+
 const segs = $('#specSegs')
 for (const [key, S] of Object.entries(SPECS)) {
   const b = document.createElement('button')
@@ -672,7 +735,7 @@ for (const [key, R] of Object.entries(FIRE_RATES)) {
   b.dataset.rate = key
   b.addEventListener('click', () => {
     state.rate = key
-    if (machine) machine.fireInterval = R.interval
+    if (machine) machine.fireInterval = autoFireInterval(R.interval, run?.loadout, autoLatched)
     syncRate()
     save()
   })
@@ -824,6 +887,10 @@ addEventListener('keydown', (e) => {
       state.varnish > 0.5 ? 'the dopamine layer is on' : 'same machine, same odds, no lacquer')
     save()
   }
+  if (e.key === 'a' || e.key === 'A') {
+    toggleAuto()
+    return
+  }
   if (e.key === 't' || e.key === 'T') {
     // Top up. Deliberately frictionless — this is a simulator, not a casino —
     // but every conjured token is recorded and shown, which a parlour would never do.
@@ -916,6 +983,9 @@ function tick (dt, t = lastT) {
   if (!(dt > 0)) return
   if (state.screen !== 'play' || !machine) return
 
+  sessionClock += dt
+  synth.setClock(sessionClock)
+
   synth.frame()
   impactsThisFrame = 0
 
@@ -925,7 +995,9 @@ function tick (dt, t = lastT) {
   // The sandbox is the exception: there the machine OWNS its balance (that is
   // the exhibit), and the run is scoreboard only.
   if (run && !run.sandbox) machine.tokens = Math.max(0, run.ballsLeft)
-  machine.firing = firingHeld && machine.tokens > 0
+  const autoOn = autoLatched && !!run?.loadout.autoFire
+  machine.fireInterval = autoFireInterval(interval(), run?.loadout, autoOn)
+  machine.firing = (firingHeld || autoOn) && machine.tokens > 0
   machine.step(dt)
 
   // The pull, made audible: a ratchet click each time the draw crosses a
@@ -964,7 +1036,8 @@ function tick (dt, t = lastT) {
   // the compositor showed one black frame at the exact quota moment. (Review
   // finding, confirmed: 2d {alpha:false} clears to opaque black.)
   syncFloorbar()
-  renderer.draw(machine, dop, state.varnish, dt, run)
+  show.update(dt)
+  renderer.draw(machine, dop, state.varnish, dt, run, show.snapshot(), state.effects === 'reduced')
   hud.update(machine, dop, state.varnish, run)
   updateTopbar()
 
@@ -1010,7 +1083,8 @@ function drainRun () {
         if (ev.chain > 0 && ev.chain % 8 === 0) {
           renderer.lampBurst(Math.min(1, 0.4 + ev.chain / 30))
           renderer.kick(0.10)
-          synth.reach(state.varnish)
+          synth.chain(ev.chain, state.varnish)
+          show.trigger('chain', Math.min(1.25, 0.65 + ev.chain / 48))
         }
         break
       }
@@ -1025,6 +1099,7 @@ function drainRun () {
         renderer.kick(0.5)
         renderer.lampBurst(1)
         synth.quota(state.varnish)
+        show.trigger('quota')
         banner('QUOTA MET', 'the floor is still yours — push for parts, or take the door below')
         break
 
@@ -1039,6 +1114,7 @@ function drainRun () {
         renderer.kick(0.4)
         renderer.lampBurst(0.8)
         synth.descend(state.varnish)
+        show.trigger('floor', 0.85)
         break
 
       case 'draft':
@@ -1137,12 +1213,12 @@ function handleEvents (events) {
         // built around simply did not happen, and nothing failed loudly enough to
         // say so. If the ball ever goes missing again, let it throw.
         const v = hesoValue()
-        dop.settle(ev.ball, v)
-        dop.push(v)
+        dop.push(dop.settle(ev.ball, v))
         renderer.flash(ev.x, ev.y, 1.2)
         renderer.pop(ev.x, ev.y, '+3', 1.1)
         renderer.lampBurst()
         renderer.kick(0.25)
+        show.trigger('pocket', 1.05)
         synth.heso(state.varnish)
         // The three balls, heard landing in the tray — the reward in the
         // room's own currency, not just a jingle about it.
@@ -1158,30 +1234,30 @@ function handleEvents (events) {
         // already exists rather than earning a voice of its own. That is
         // Builder 2's rule working as intended (docs/HANDOFF.md): hook the
         // LEDGER, and a payout source added later inherits the family free.
-        dop.settle(ev.ball, ev.n)
-        dop.push(ev.n)
+        dop.push(dop.settle(ev.ball, ev.n))
         renderer.flash(ev.x, ev.y, 0.7)
         renderer.lampBurst(0.5)
+        show.trigger('pocket', 0.7)
         synth.cascade(4, state.varnish)
         break
 
       case 'tulip':
-        dop.settle(ev.ball, TULIP_PAY)
-        dop.push(TULIP_PAY)
+        dop.push(dop.settle(ev.ball, TULIP_PAY))
         renderer.flash(ev.x, ev.y, 0.4)
         renderer.pop(ev.x, ev.y, '+2', 0.8)
         renderer.lampBurst(0.4)
+        show.trigger('pocket', 0.55)
         synth.tulip(state.varnish)
         synth.cascade(6, state.varnish)
         break
 
       case 'attacker':
-        dop.settle(ev.ball, machine.S.payPerEntry)
-        dop.push(machine.S.payPerEntry)
+        dop.push(dop.settle(ev.ball, machine.S.payPerEntry))
         renderer.flash(ev.x, ev.y, 1.0)
         renderer.pop(ev.x, ev.y, `+${ev.n}`, 1.3)
         renderer.lampBurst(0.65)
         renderer.kick(0.18)
+        show.trigger('pocket', 0.9)
         synth.cascade(machine.S.payPerEntry, state.varnish)
         break
 
@@ -1189,14 +1265,16 @@ function handleEvents (events) {
         // Same ball, new id. Carry its history so the route can be learned.
         dop.carry(ev.ball, ev.into)
         renderer.flash(ev.x, ev.y, 0.25)
+        synth.warp(state.varnish)
+        show.trigger('warp')
         break
 
       case 'drain':
-        if (ev.ball) dop.settle(ev.ball, 0)
+        if (ev.ball) dop.push(dop.settle(ev.ball, 0))
         break
 
       case 'foul':
-        if (ev.ball) dop.settle(ev.ball, 0)
+        if (ev.ball) dop.push(dop.settle(ev.ball, 0))
         // The dead thud of a ball falling back onto balls. Foul = thud,
         // play = ring — the jam becomes audible one clack at a time.
         synth.foul(state.varnish)
@@ -1210,6 +1288,7 @@ function handleEvents (events) {
         renderer.kick(0.12)
         synth.koatari(state.varnish)
         synth.gate(true, state.varnish)
+        show.trigger('koatari')
         banner('小当たり  SMALL WIN', 'the attacker is open, briefly — hit RIGHT')
         break
 
@@ -1218,10 +1297,21 @@ function handleEvents (events) {
         break
 
       case 'spinStart':
-        dop.beginRamp(ev.reach ? 0.5 : 0.12)
-        synth.spinTick(state.varnish)
-        if (ev.reach) synth.reach(state.varnish)
+        // The ticket is nearly a certain loss, so its Bernoulli uncertainty is
+        // small. Hidden `reach` must not leak into presentation at draw time.
+        dop.beginRamp(bernoulliUncertainty(1 / Math.max(1, ev.oddsNow)))
         break
+
+      case 'reachReveal': {
+        // Once two reels visibly match, the conditional chance is higher but
+        // still measured from the machine's actual ticket and reach rates.
+        const pWin = 1 / Math.max(1, ev.oddsNow)
+        const pGivenReach = pWin / (pWin + (1 - pWin) * ev.reachRate)
+        dop.beginRamp(bernoulliUncertainty(pGivenReach))
+        synth.reach(state.varnish)
+        show.trigger('reach')
+        break
+      }
 
       case 'spinLose':
         dop.endRamp()
@@ -1247,6 +1337,7 @@ function handleEvents (events) {
         const size = Math.min(1, (ev.potential || 900) / 1500)
         synth.shepardStop()
         synth.jackpotBuild(ev.build, size, state.varnish)
+        show.trigger('jackpotBuild', 0.8 + size * 0.4)
         banner('大当たり  ŌATARI', `up to ${ev.potential} balls — get right before the mouth opens`)
         state.lifetime.jackpots++
         break
@@ -1260,6 +1351,7 @@ function handleEvents (events) {
         renderer.lampBurst(1)
         synth.gate(true, state.varnish)
         synth.jackpot(size, state.varnish)
+        show.trigger('jackpot', 0.85 + size * 0.45)
         // The descent runs underneath the whole jackpot and never arrives —
         // which is the honest shape of a kakuhen chain. It stops when the chain does.
         synth.shepard(200, state.varnish, (machine.chainDepth || 1) - 1)
@@ -1321,6 +1413,7 @@ function handleEvents (events) {
         // Refunds do not pass through pay(), and must not: a fouled ball
         // returning is a spend reversed, not a gain.
         renderer.rewardPulse(ev.n)
+        conditioning.pay({ t: sessionClock, n: ev.n, source: ev.source })
         // The consolation has no pocket handler to cascade from — its balls
         // land in the tray here. Legal for the reward family by construction:
         // this arm of the switch cannot be reached unless the ledger moved.
@@ -1423,7 +1516,37 @@ function updateTopbar () {
     : machine.kakuhen > 0 ? `確変 ${machine.kakuhen}`
       : near ? 'COIN FLIP — the least predictable dial position' : ''
   $('#tState').style.color = near ? 'var(--hot)' : 'var(--dim)'
+  syncAuto()
 }
+
+function syncAuto () {
+  const b = $('#autoLatch')
+  const fitted = !!run?.loadout.autoFire
+  if (!fitted) autoLatched = false
+  b.hidden = !fitted
+  b.setAttribute('aria-pressed', String(fitted && autoLatched))
+  b.innerHTML = `AUTO <b>${autoLatched ? 'ON' : 'OFF'}</b>`
+  b.title = fitted
+    ? `A — fires at BASE, ${Math.round(60 / autoFireInterval(interval(), run.loadout, true))} balls/min`
+    : ''
+}
+
+function toggleAuto () {
+  if (!run?.loadout.autoFire) {
+    banner('NO AUTO HANDLE', 'the rare motor enters the back room from floor five')
+    return false
+  }
+  autoLatched = !autoLatched
+  synth.click()
+  banner(autoLatched ? 'AUTO HANDLE ON' : 'AUTO HANDLE OFF',
+    autoLatched
+      ? `holding BASE ${machine.dial.toFixed(2)} · ${Math.round(60 / autoFireInterval(interval(), run.loadout, true))} balls/min`
+      : 'manual trigger restored')
+  syncAuto()
+  return true
+}
+
+$('#autoLatch').addEventListener('click', toggleAuto)
 
 /**
  * Debug handle. Read-only in spirit: it exists so the running game can be
@@ -1439,6 +1562,7 @@ globalThis.__pachinkode = {
   synth,
   threshold: THRESHOLD,
   fire (on = true) { firingHeld = on },
+  auto (on = !autoLatched) { if (on !== autoLatched) toggleAuto(); return autoLatched },
   pull () { machine && machine.beginCharge() },
   release () { machine && machine.releaseCharge() },
   go,

@@ -897,6 +897,17 @@ export class Machine {
 
     if (this.spin) {
       this.spin.t += dt
+      // A reach is not public information when the ticket is drawn. It becomes
+      // a cue only when the first two reels have visibly stopped together. The
+      // renderer uses the same 0.58 boundary, so sound can never leak the hidden
+      // outcome a frame before the player can see it.
+      if (this.spin.reach && !this.spin.reachRevealed && this.spin.t / this.spin.dur >= 0.58) {
+        this.spin.reachRevealed = true
+        this.emit('reachReveal', {
+          oddsNow: Math.round(this.oddsNow),
+          reachRate: 0.14
+        })
+      }
       if (this.spin.t >= this.spin.dur) {
         const { outcome, reach, ko } = this.spin
         this.lastSymbols = this.spinSymbols()
@@ -954,11 +965,15 @@ export class Machine {
         outcome: win,
         reach,
         ko,
+        reachRevealed: false,
         // The display seed — drawn here, with everything else, the instant
         // the spin begins. See spinSymbols for why the reels earn a draw now.
         ds: (this.rng() * 4294967296) >>> 0
       }
-      this.emit('spinStart', { odds, oddsNow: Math.round(this.oddsNow), reach, holds: this.holds, kakuhen: this.kakuhen > 0 })
+      // Do not put `reach` on this public event: it is future information until
+      // reachReveal. Keeping it out makes accidental anticipatory leakage fail
+      // structurally instead of relying on every observer to show restraint.
+      this.emit('spinStart', { odds, oddsNow: Math.round(this.oddsNow), holds: this.holds, kakuhen: this.kakuhen > 0 })
     }
   }
 

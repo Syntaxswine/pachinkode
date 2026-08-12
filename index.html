@@ -109,10 +109,15 @@
   .tiny { color: var(--faint); font-size: 9.5px; line-height: 1.6; }
   #topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 14px;
             padding: 9px 12px; font-size: 10px; color: var(--dim); letter-spacing: .1em;
-            pointer-events: none; }
+            pointer-events: none; flex-wrap: wrap; row-gap: 6px; }
   #topbar b { color: var(--ink); font-weight: 500; }
   #topbar .esc { pointer-events: auto; cursor: pointer; color: var(--faint); }
   #topbar .esc:hover { color: var(--hot); }
+  #topbar #autoLatch { pointer-events: auto; background: rgba(10,13,17,.8);
+                      border: 1px solid var(--faint); color: var(--dim);
+                      padding: 2px 7px; margin: -3px 0; letter-spacing: .1em; }
+  #topbar #autoLatch[aria-pressed=true] { border-color: var(--hot); color: var(--hot);
+                                         box-shadow: 0 0 12px rgba(232,163,61,.22); }
   /* ── the floor bar ──
      The door out of a cleared floor. It slides up at the stage's foot when the
      quota is met and the floor KEEPS PLAYING behind it — pushing on is a thing
@@ -152,6 +157,8 @@
   #banner.on { opacity: 1; }
   #banner small { display: block; font-size: 10px; letter-spacing: .18em;
                   color: var(--dim); margin-top: 7px; }
+  body.reduced-effects #banner,
+  body.reduced-effects #floorbar { transition: none; }
   /* ── the roguelike screens ──
      Same restraint as the rest of the shell: monospace, thin rules, colour used
      only where it carries information. The spectacle lives on the BOARD, where
@@ -188,6 +195,15 @@
   .unlocks { margin-top: 18px; }
   .unlocks div { border: 1px solid var(--hot); color: var(--hot); padding: 9px 12px;
                  letter-spacing: .14em; font-size: 11px; margin-bottom: -1px; }
+  .receipt { margin: 20px auto 0; max-width: 620px; text-align: left;
+             border: 1px solid var(--faint); background: rgba(8,11,15,.72); }
+  .receipt h3 { margin: 0; padding: 9px 12px; border-bottom: 1px solid var(--faint);
+                color: var(--hot); font-size: 10px; font-weight: 500; letter-spacing: .2em; }
+  .receipt .line { padding: 10px 12px; border-top: 1px solid #202730;
+                   color: var(--dim); font-size: 10px; line-height: 1.65; }
+  .receipt .line:first-of-type { border-top: none; }
+  .receipt .line b { display: block; color: var(--ink); font-size: 9px;
+                     letter-spacing: .15em; margin-bottom: 3px; }
 
   /* The run readout in the play panel. The quota is the only number here that
      can end the run, so it gets the large type. */
@@ -262,7 +278,7 @@
     <button data-go="cabinets">NEW RUN<small>twelve floors, a quota on each, and a back room between them</small></button>
     <button data-go="play" data-mode="free">FREE PLAY<small>no quota, no clock — score buys parts and balls at the shop. abandons a run in progress</small></button>
     <button data-go="records">RECORDS<small>every run this browser remembers, and what it was worth</small></button>
-    <button data-go="options">OPTIONS<small>sound · varnish · fire rate · machine class</small></button>
+    <button data-go="options">OPTIONS<small>sound · effects · varnish · fire rate · machine class</small></button>
     <button data-go="about">ABOUT<small>what is real in here, and what is not</small></button>
   </nav>
   <div class="tiny" id="metaLine" style="margin-top:22px;letter-spacing:.14em"></div>
@@ -301,8 +317,9 @@
   <div class="sheet">
     <img id="cabTanuki" src="./images/tanuki-machine.png" alt="">
     <h2>CHOOSE A CABINET</h2>
-    <p class="note" style="max-width:56ch">Every one of these is a real class of Japanese machine. A harder cabinet
-      raises every floor's quota — and hands you a board that is already halfway built.
+    <p class="note" style="max-width:56ch">The mechanical cabinets use real Japanese machine classes;
+      the named picture boards are original layouts in the 1970s tradition. A harder cabinet
+      raises every floor's quota — and may hand you a board that is already halfway built.
       Clearing floor twelve banks the win; the floors keep coming after it.</p>
     <div id="cabList"></div>
     <div class="backrow"><button data-go="title">BACK</button></div>
@@ -329,6 +346,12 @@
     <h2 id="roHead">THE RUN ENDS</h2>
     <div class="bigscore" id="roScore">0</div>
     <p class="note" id="roSub" style="margin:14px auto 0;max-width:56ch"></p>
+    <div id="roReceipt" class="receipt">
+      <h3>HONEST RECEIPT</h3>
+      <div class="line"><b>WHERE THE SCORE CAME FROM</b><span id="roProv"></span></div>
+      <div class="line"><b>WHAT THE CABINET TAUGHT</b><span id="roCondition"></span></div>
+      <div class="line"><b>WHAT THE SESSION COST</b><span id="roCost"></span></div>
+    </div>
     <div id="roUnlocks" class="unlocks"></div>
     <div class="backrow" style="justify-content:center">
       <button id="roAgain">RUN IT AGAIN</button>
@@ -366,6 +389,15 @@
         glass off: more balls in flight, more of the board alive at once. Tempo changes; the odds,
         the payouts and the price of a ball do not, and the ledger keeps counting at the real
         rental rate. Takes effect immediately.</div>
+    </div>
+
+    <div class="grp">
+      <div class="lbl">COMFORT</div>
+      <div class="segs" id="effectSegs"></div>
+      <div class="note">REDUCED EFFECTS removes screen shake and the reward wash, freezes travelling
+        light chases, and heavily dims payout flashes and lamps. Payout numbers, reel state, warnings, physics, odds, and
+        sound settings remain unchanged. Your system reduced-motion preference is used as the
+        initial default until you choose here.</div>
     </div>
 
     <div class="grp">
@@ -457,6 +489,7 @@
       <span>BASE <b id="tDial">—</b></span>
       <span>PULL <b id="tPull">—</b></span>
       <span>ROUTE <b id="tRoute">—</b></span>
+      <button id="autoLatch" aria-pressed="false" hidden>AUTO <b>OFF</b></button>
       <span id="tState"></span>
     </div>
     <div id="banner"><span id="bannerText"></span><small id="bannerSub"></small></div>

@@ -51,6 +51,12 @@ const RAMP_WEIGHT = 0.33
 // Learning rate for the value map. Not from the literature — a simulation knob.
 const ALPHA = 0.14
 
+/** Bernoulli variance normalised so a genuine coin flip is 1. */
+export function bernoulliUncertainty (p) {
+  const q = Math.max(0, Math.min(1, Number.isFinite(p) ? p : 0))
+  return 4 * q * (1 - q)
+}
+
 export class Dopamine {
   constructor (boardW, boardH) {
     this.cols = Math.ceil(boardW / CELL)

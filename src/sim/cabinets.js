@@ -1,11 +1,11 @@
 // The cabinets.
 //
-// Every one of these is a REAL class of Japanese pachinko machine, not an
-// invented difficulty tier — the same discipline the SPECS table in machine.js
-// already follows. Roguelikes hand you "the fire character, the ice character";
-// this game has an actual taxonomy sitting there, with actual mechanical
-// identities, and using it costs nothing and buys the whole unlock ladder a
-// meaning.
+// The mechanical cabinets use REAL classes of Japanese pachinko machine, not
+// invented difficulty elements — the same discipline as SPECS in machine.js.
+// TANUKIDAI and KAWADAI are explicitly picture-board identities in the 1970s
+// tradition, not claims of additional regulated classes. Roguelikes hand you
+// "the fire character, the ice character"; this game has an actual taxonomy
+// plus authored boards, and labels the boundary between them.
 //
 // A cabinet is three things:
 //   * a SPEC — the lottery underneath (machine.js SPECS)
@@ -99,6 +99,20 @@ export const CABINETS = {
     note: 'A 1970s picture board. The tanuki is the layout: its navel is the navel, ' +
       'its paw and tail catch, and the lottery reads out in the corner like a marquee.'
   },
+  kawadai: {
+    id: 'kawadai',
+    label: 'KAWADAI',
+    jp: '川台',
+    spec: 'amadeji',
+    difficulty: 1.18,
+    parts: [],
+    motif: MOTIFS.kawa,
+    unlock: { bestFloor: 5 },
+    note: 'An original picture board in the 1970s tradition: a river festival told in brass. ' +
+      'Balls enter at the source, cross an open bridge, ' +
+      'circle the whirlpool navel, and spill toward the harbour through the widest clear centre ' +
+      'on any cabinet.'
+  },
   kenri: {
     id: 'kenri',
     label: 'KENRIMONO',
@@ -143,7 +157,7 @@ export const CABINETS = {
   }
 }
 
-export const CABINET_ORDER = ['floor', 'ippatsu', 'tanukidai', 'hanemono', 'kenri', 'digipachi', 'uramono']
+export const CABINET_ORDER = ['floor', 'ippatsu', 'tanukidai', 'kawadai', 'hanemono', 'kenri', 'digipachi', 'uramono']
 
 // ── the record ──────────────────────────────────────────────────────────────
 //

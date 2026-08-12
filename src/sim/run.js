@@ -132,7 +132,8 @@ export function chainMult (chain, L) {
 
 // ── THE KEYSTONE: WHERE THE SCORE CAME FROM ─────────────────────────────────
 //
-// Declared here, accumulated in `add()`, and read by NOTHING. That is the same
+// Declared here, accumulated in `add()`, and read only by the end-run receipt.
+// It never feeds scoring, offers, physics, or difficulty. That is the same
 // contract Builder 1 used for nail bending and Builder 2 for the conditioning
 // ledger, and it is deliberate: see docs/HANDOFF.md.
 //
@@ -173,8 +174,8 @@ export function chainMult (chain, L) {
 //
 // ── what it is FOR ──────────────────────────────────────────────────────────
 //
-// Nothing reads it yet. The unbuilt consumer is the end-of-run screen, and it
-// would say something no gambling machine has ever said to anybody:
+// The end-of-run screen now reads it and says something no gambling machine
+// has ever said to anybody:
 //
 //     4,182,300 points.
 //     91% of it came from pockets you aimed at.
@@ -185,7 +186,7 @@ export function chainMult (chain, L) {
 // rather than on a slider — and it is the natural partner to Builder 2's
 // conditioning ledger, which measures what the machine TAUGHT you while this
 // measures what it PAID you for. Between them the last screen of this game
-// could be an honest receipt for an evening, itemised two ways.
+// is an honest receipt for an evening, itemised two ways.
 //
 // ── a pilot measurement, because guessing was cheaper to check than to hedge ─
 //
@@ -213,8 +214,8 @@ export function chainMult (chain, L) {
 //
 // So the open question is no longer "is the lottery share small". It is: over
 // a FULL RUN, where jackpots have time to arrive and the chain has time to hit
-// its cap, do those two lines cross? That is what the unbuilt consumer would
-// answer, and it is a better question than the one I started with.
+// its cap, do those two lines cross? That is what the receipt now answers, and
+// it is a better question than the one I started with.
 export const SCORE_ORIGIN = {
   bucket: 'aimed',
   heso: 'aimed',
@@ -398,8 +399,11 @@ export class Run {
     this.launchedAtQuota = 0
     this.inFlight = 0
     this.refundPool = 0
+    this.elapsed = 0
+    this.totalLaunched = 0
+    this.totalFouls = 0
     // The keystone's ledger. Accumulated for the whole run, never reset per
-    // floor, and read by nothing. See SCORE_ORIGIN above.
+    // floor, and consumed only by the receipt. See SCORE_ORIGIN above.
     this.provenance = newProvenance()
     this.events = []
   }
@@ -614,7 +618,7 @@ export class Run {
   /** Lay out the shop's shelf. Callable any time in the sandbox. */
   shopDeal () {
     if (!this.sandbox) return null
-    this.offers = drawOffers(this.loadout, this.rng, 3)
+    this.offers = drawOffers(this.loadout, this.rng, 3, { floor: Infinity })
     return this.offers
   }
 
@@ -684,6 +688,7 @@ export class Run {
    */
   observe (events, dt, { inFlight = 0 } = {}) {
     if (this.status !== 'playing') return
+    this.elapsed += dt
     this.inFlight = inFlight
     for (const ev of events) {
       // TEMPER (machine.js): the ball's earned tier multiplies what its
@@ -704,8 +709,14 @@ export class Run {
         // The clock. A sandbox has none — the machine owns its own balance
         // there, and decrementing a clock nobody reads would march ballsLeft
         // to minus infinity.
-        case 'launch': if (!this.sandbox) { this.launched++; this.ballsLeft-- } break
-        case 'foul': if (!this.sandbox) this.ballsLeft++; break
+        case 'launch':
+          this.totalLaunched++
+          if (!this.sandbox) { this.launched++; this.ballsLeft-- }
+          break
+        case 'foul':
+          this.totalFouls++
+          if (!this.sandbox) this.ballsLeft++
+          break
         case 'pay': {
           // THE CONSOLATION feeds the clock directly — the ONE payout that
           // does. The clock's law is: launches spend, fouls refund, payouts
@@ -767,7 +778,7 @@ export class Run {
 
   /** Lay out a fresh set of offers for the current pick. */
   deal () {
-    this.offers = drawOffers(this.loadout, this.rng, 3)
+    this.offers = drawOffers(this.loadout, this.rng, 3, { floor: this.floor })
     this.emit('draft', {
       offers: this.offers.map(o => o.id),
       picksLeft: this.picksLeft,

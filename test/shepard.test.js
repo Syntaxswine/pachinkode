@@ -13,12 +13,13 @@ import { shepardFrame, SHEPARD, Synth, CUE_FAMILY } from '../src/audio/synth.js'
  */
 test('every voice the synth can produce declares a cue family', () => {
   const s = new Synth()
-  // Drive every voice headlessly. Without a WebAudio context they schedule
-  // nothing, but they still stamp — which is exactly what the socket is for.
+  s.setVirtualAudio(true)
+  // Drive every voice in the audit-only virtual listening mode. Production
+  // requires a live, unmuted AudioContext before anything can stamp.
   s.heso(1); s.tulip(1); s.koatari(1); s.kakuhen(0.65, 1); s.jackpot(0.5, 1)
   s.cascade(9, 1); s.jackpotBuild(2.6, 0.5, 1); s.launch(0.5, 0, 1); s.ratchet(0.5, 1)
-  s.foul(1); s.gate(true, 1); s.spinTick(1); s.lose(false, 0); s.reach(1)
-  s.shepard(8, 1); s.quota(1); s.descend(1); s.split(1); s.click(); s.select()
+  s.foul(1); s.gate(true, 1); s.spinTick(1); s.lose(false, 0); s.reach(1); s.warp(1)
+  s.shepard(8, 1); s.quota(1); s.descend(1); s.chain(16, 1); s.split(1); s.click(); s.select()
 
   // 'milestone' joined the taxonomy with the quota fanfare: a voice about the
   // RUN's printed scoreboard rather than the machine's ledger, added because
@@ -46,7 +47,56 @@ test('a cue that did not sound is not recorded', () => {
   s.lose(false, 1)
   assert.equal(s.cues.length, 0, 'a silent loss stamped a cue')
   s.lose(false, 0)
+  assert.equal(s.cues.length, 0, 'a pre-gesture tone stamped an audible cue')
+  s.setVirtualAudio(true)
+  s.lose(false, 0)
   assert.equal(s.cues.length, 1, 'the unvarnished loss tone failed to stamp')
+})
+
+test('muted and zero-volume cues are absent from the audible receipt', () => {
+  const s = new Synth()
+  s.ready = true
+  const gain = { setTargetAtTime () {} }
+  s.ctx = { state: 'running', currentTime: 2 }
+  s.master = { gain }; s.busImpacts = { gain }; s.busRewards = { gain }; s.busBed = { gain }
+
+  s.setMuted(true)
+  s.mark('heso')
+  assert.equal(s.cues.length, 0, 'a muted reward was counted as heard')
+
+  s.setMuted(false)
+  s.setVolumes({ rewards: 0 })
+  s.mark('heso')
+  assert.equal(s.cues.length, 0, 'a zero-volume reward bus was counted as heard')
+
+  s.setVolumes({ rewards: 0.5 })
+  s.mark('heso')
+  assert.equal(s.cues.length, 1, 'an audible reward failed to reach the receipt')
+})
+
+test('the loss voice follows its actual rewards bus in both directions', () => {
+  const s = new Synth()
+  s.ready = true
+  s.ctx = { state: 'running', currentTime: 2 }
+
+  Object.assign(s.vol, { master: 1, rewards: 0, impacts: 1 })
+  assert.equal(s.mark('lose'), false,
+    'loss was counted through impacts while its rewards-bus tone was silent')
+
+  Object.assign(s.vol, { rewards: 1, impacts: 0 })
+  assert.equal(s.mark('lose'), true,
+    'an audible rewards-bus loss was omitted because impacts were silent')
+})
+
+test('gate opening predicts while gate closing only reports the mechanism', () => {
+  const s = new Synth()
+  s.setVirtualAudio(true)
+  s.gate(true, 1)
+  s.gate(false, 1)
+  assert.deepEqual(s.cues.map(c => [c.name, c.family]), [
+    ['gateOpen', 'predictive'],
+    ['gateClose', 'mechanism']
+  ])
 })
 
 /**

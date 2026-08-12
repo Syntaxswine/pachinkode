@@ -159,6 +159,46 @@ export const MOTIFS = {
       { x: 0.338, y: 0.118 }
     ],
     minNails: 60
+  },
+
+  // 川台 — a river picture-board. The banks are the nail contour and the
+  // water is deliberately empty field: a 120–160 mm central descent instead
+  // of another large LCD housing. Printed landmarks turn a ball's fall into a
+  // tiny journey—source, bridge, whirlpool, harbour—without scripting it.
+  kawa: {
+    id: 'kawa',
+    label: '川台',
+    img: { x: 0.105, y: 0.150, w: 0.210, h: 0.255 },
+    contour: [
+      [0.177, 0.169], [0.162, 0.192], [0.148, 0.216], [0.155, 0.241],
+      [0.140, 0.267], [0.148, 0.293], [0.138, 0.319], [0.151, 0.345],
+      [0.165, 0.371], [0.180, 0.397], [0.260, 0.397], [0.275, 0.372],
+      [0.288, 0.346], [0.279, 0.320], [0.299, 0.294], [0.288, 0.268],
+      [0.302, 0.242], [0.291, 0.216], [0.277, 0.193], [0.263, 0.169]
+    ],
+    heso: { x: 0.220, y: 0.354 },
+    tulips: [
+      { id: 'tulipR', x: 0.319, y: 0.148 }
+    ],
+    bucketSites: {
+      eastLow: { x: 0.354, y: 0.284, jp: '右岸', label: 'EAST BANK', value: 2.2 },
+      westDeep: { x: 0.166, y: 0.376, jp: '西港', label: 'WEST HARBOUR', value: 2.5 },
+      eastDeep: { x: 0.274, y: 0.376, jp: '東港', label: 'EAST HARBOUR', value: 1 },
+      eastHigh: { x: 0.350, y: 0.216, jp: '灯門', label: 'LANTERN GATE', value: 1.4 }
+    },
+    // Four berths by measurement. westLow never fed and a centre cup walled
+    // the river mouth off at intermediate widths, so neither is sold.
+    siteOrder: ['eastLow', 'westDeep', 'eastDeep', 'eastHigh'],
+    housing: { x0: 0.180, x1: 0.260, y0: 0.110, y1: 0.160, rise: 0.022, warps: [0.198, 0.242] },
+    displayRect: { x0: 0.307, y0: 0.010, x1: 0.434, y1: 0.056 },
+    corridorHalf: 0.024,
+    gridPitchMult: 1.0,
+    rosettes: [
+      { x: 0.082, y: 0.185 },
+      { x: 0.354, y: 0.115 },
+      { x: 0.366, y: 0.180 }
+    ],
+    minNails: 60
   }
 }
 

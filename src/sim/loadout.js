@@ -203,6 +203,8 @@ export function baseLoadout () {
     quotaRelief: 0,
     goldBalls: false,   // GOLD BALLS — every launch splits at its first nail
     temperBar: false,   // THE TEMPER BAR — sweeping non-solid promoter (machine.js)
+    autoFire: false,    // AUTO HANDLE — shell may hold the launcher at BASE
+    autoFireRate: 1 / 3,
 
     // bookkeeping — which parts produced this loadout
     parts: []
@@ -418,6 +420,21 @@ export const PARTS = [
     apply (L) { L.goldBalls = true }
   },
   {
+    id: 'autofire',
+    name: 'AUTO HANDLE',
+    jp: '自動打ち',
+    kind: 'ball',
+    weight: 5,
+    max: 1,
+    minFloor: 5,
+    blurb: 'Toggle a motor that fires forever at your BASE strength. The late-run gear cycles three times faster.',
+    detail: 'Press A or the AUTO control in play. The motor uses the exact BASE on the launcher ' +
+      'scale—it never guesses your aim and a charged manual shot still takes priority. Its 3:1 ' +
+      'gear is the density step: more simultaneous steel, more chain pressure, and a tray that ' +
+      'empties faster in wall-clock time. Offered only from floor five, at nearly GOLD BALL rarity.',
+    apply (L) { L.autoFire = true }
+  },
+  {
     id: 'temperbar',
     name: 'THE TEMPER BAR',
     jp: '焼入れ棒',
@@ -497,7 +514,9 @@ export function countPart (L, id) {
 }
 
 /** Can this part still be taken? Respects both `max` and its own predicate. */
-export function partAvailable (L, part) {
+export function partAvailable (L, part, context = {}) {
+  const floor = context.floor ?? Infinity
+  if (part.minFloor && floor < part.minFloor) return false
   if (part.max && countPart(L, part.id) >= part.max) return false
   if (part.available && !part.available(L)) return false
   return true
@@ -511,8 +530,8 @@ export function partAvailable (L, part) {
  * offers the same part twice in one draft — a shop showing you the same
  * multiplier three times is a shop that wasted your choice.
  */
-export function drawOffers (L, rng, n = 3) {
-  const pool = PARTS.filter(p => partAvailable(L, p))
+export function drawOffers (L, rng, n = 3, context = {}) {
+  const pool = PARTS.filter(p => partAvailable(L, p, context))
   const out = []
   const used = new Set()
   for (let k = 0; k < n && used.size < pool.length; k++) {
@@ -527,4 +546,9 @@ export function drawOffers (L, rng, n = 3) {
     }
   }
   return out
+}
+
+/** Effective launcher interval for the optional motor; BASE power is untouched. */
+export function autoFireInterval (baseInterval, L, latched) {
+  return latched && L?.autoFire ? baseInterval * L.autoFireRate : baseInterval
 }

@@ -32,6 +32,13 @@ export function registerMotifArt (id, spec) { MOTIF_ART[id] = { ...spec, img: nu
 const TAU = Math.PI * 2
 const TRAIL_MAX = 26
 
+export const EFFECTS_PROFILE = Object.freeze({
+  full: Object.freeze({ motion: 1, flash: 1, lamps: 1, rewardWash: 1, shake: 1 }),
+  reduced: Object.freeze({ motion: 0, flash: 0.18, lamps: 0.24, rewardWash: 0, shake: 0 })
+})
+export const effectsProfile = reduced => reduced ? EFFECTS_PROFILE.reduced : EFFECTS_PROFILE.full
+export const effectsPhase = (phase, reduced) => reduced ? 0.5 : phase
+
 // ── the route recorder (operator's design, 2026-07-28) ──────────────────────
 // Every ball's COMPLETE path is recorded from launcher to pocket — invisibly.
 // The playing game renders only the fading tail it always has; the full story
@@ -160,23 +167,25 @@ export class Renderer {
     this.bucketTier.set(site, tier)
   }
 
-  draw (machine, dop, varnish, dt, run = null) {
+  draw (machine, dop, varnish, dt, run = null, show = null, reducedEffects = false) {
     const ctx = this.ctx
     const P = framePalette(dop, varnish)
     const w = this.cssW, h = this.cssH
+    const effects = effectsProfile(reducedEffects)
 
     ctx.save()
     ctx.scale(this.dpr, this.dpr)
 
     // Screen shake, scaled by varnish — it is presentation, so it obeys the switch.
     this.shake = Math.max(0, this.shake - dt * 2.6)
-    if (this.shake > 0.001 && varnish > 0) {
+    if (this.shake > 0.001 && varnish > 0 && effects.shake > 0) {
       const k = this.shake * this.shake * 5 * varnish
       ctx.translate((Math.random() - 0.5) * k, (Math.random() - 0.5) * k)
     }
 
     this.background(ctx, P, w, h, dop)
     this.iris(ctx, P, dop)
+    this.spectacleBack(ctx, P, show, w, h, reducedEffects)
     this.motifBackdrop(ctx, P, machine)
     this.boardFace(ctx, P)
     this.rail(ctx, P, machine)
@@ -198,18 +207,86 @@ export class Renderer {
     this.buckets(ctx, P, machine)
     this.routeLayer(ctx, P)
     this.trailsAndBalls(ctx, P, machine, dop, dt)
-    this.flashLayer(ctx, P, dt)
-    this.lamps(ctx, P, machine, dop, dt)
+    this.flashLayer(ctx, P, dt, effects)
+    this.lamps(ctx, P, machine, dop, dt, effects)
+    this.spectacleFront(ctx, P, show, reducedEffects)
     this.popupLayer(ctx, P, dt)
     this.scorePopLayer(ctx, P, dt)
     this.chainMeter(ctx, P, run)
     this.quotaBar(ctx, P, run)
     this.launcher(ctx, P, machine)
     // Last, and additive: the room lighting up rather than a sheet over it.
-    this.rewardWash(ctx, P, w, h, dt)
+    this.rewardWash(ctx, P, w, h, dt, effects)
 
     ctx.restore()
     this._t += dt
+  }
+
+  /** Broad rays behind the brass: scene-setting light, never ball information. */
+  spectacleBack (ctx, P, show, w, h, reduced) {
+    if (!show || show.intensity <= 0.01 || P.varnish <= 0.01) return
+    const k = show.intensity * P.varnish * (reduced ? 0.24 : 1)
+    const cx = this.X(BOARD.w / 2), cy = this.Y(0.245)
+    const rays = reduced ? 6 : 16
+    const phase = reduced ? 0 : (show.time || 0) * (show.pattern === 'chase' ? 1.8 : 0.55)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.translate(cx, cy)
+    ctx.rotate(phase)
+    for (let i = 0; i < rays; i++) {
+      const a = TAU * i / rays
+      const spread = reduced ? 0.035 : 0.018 + 0.012 * Math.sin(phase + i)
+      ctx.beginPath()
+      ctx.moveTo(0, 0)
+      ctx.arc(0, 0, Math.max(w, h) * 0.72, a - spread, a + spread)
+      ctx.closePath()
+      ctx.fillStyle = hsl((show.hue + i * (show.pattern === 'festival' ? 19 : 2)) % 360,
+        P.saturation, 0.48, 0.028 * k)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+
+  /**
+   * Forty-eight marquee lamps around the live field. Patterns are continuous
+   * chases and blooms rather than on/off strobes; reduced mode freezes their
+   * travel and lowers the bloom while preserving the fact a scene is active.
+   */
+  spectacleFront (ctx, P, show, reduced) {
+    if (!show || show.intensity <= 0.01 || P.varnish <= 0.01) return
+    const pos = []
+    const top = 14, side = 10, bottom = 14
+    for (let i = 0; i < top; i++) pos.push({ x: 0.022 + 0.396 * i / (top - 1), y: 0.023 })
+    for (let i = 1; i <= side; i++) pos.push({ x: 0.421, y: 0.023 + 0.420 * i / (side + 1) })
+    for (let i = bottom - 1; i >= 0; i--) pos.push({ x: 0.022 + 0.396 * i / (bottom - 1), y: 0.453 })
+    for (let i = side; i >= 1; i--) pos.push({ x: 0.019, y: 0.023 + 0.420 * i / (side + 1) })
+    const N = pos.length
+    const t = reduced ? 0.18 : (show.time || 0)
+    const phase = effectsPhase(show.phase, reduced)
+    const strength = show.intensity * P.varnish * (reduced ? 0.38 : 1)
+    for (let i = 0; i < N; i++) {
+      const u = i / N
+      let b = 0.25
+      if (show.pattern === 'burst') b = 0.35 + 0.65 * Math.max(0, Math.sin(phase * Math.PI))
+      else if (show.pattern === 'tunnel') b = 0.15 + 0.85 * Math.max(0, Math.cos(TAU * (u * 2 - t * 2.2))) ** 5
+      else if (show.pattern === 'steps') b = ((i + Math.floor(t * 12)) % 4 === 0) ? 1 : 0.14
+      else if (show.pattern === 'converge') b = 0.12 + 0.88 * Math.max(0, 1 - Math.abs(u - (0.5 - phase * 0.5)) * 6)
+      else if (show.pattern === 'alternating') b = ((i + Math.floor(t * 4)) % 2) ? 0.9 : 0.18
+      else if (show.pattern === 'wipe' || show.pattern === 'curtain') b = u <= phase ? 1 : 0.12
+      else if (show.pattern === 'chase') b = 0.12 + 0.88 * Math.max(0, Math.cos(TAU * (u - t * 1.4))) ** 8
+      else if (show.pattern === 'festival') b = 0.28 + 0.72 * Math.max(0, Math.sin(TAU * (u * 3 - t * 1.6))) ** 2
+      const lit = Math.max(0, Math.min(1, b * strength))
+      if (lit < 0.025) continue
+      const x = this.X(pos[i].x), y = this.Y(pos[i].y)
+      const r = Math.max(1.5, this.S(0.0036))
+      const hue = (show.hue + (show.pattern === 'festival' ? i * 13 : 0)) % 360
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r * (2 + lit * 2.5))
+      g.addColorStop(0, hsl(hue, P.saturation * 1.2, 0.88, lit))
+      g.addColorStop(0.28, hsl(hue, P.saturation, 0.60, lit * 0.7))
+      g.addColorStop(1, hsl(hue, P.saturation, 0.45, 0))
+      ctx.fillStyle = g
+      ctx.beginPath(); ctx.arc(x, y, r * (2 + lit * 2.5), 0, TAU); ctx.fill()
+    }
   }
 
   /**
@@ -248,10 +325,10 @@ export class Renderer {
   }
 
   /** Draws the pulse set by rewardPulse(). Additive, edge-weighted, gated. */
-  rewardWash (ctx, P, w, h, dt) {
+  rewardWash (ctx, P, w, h, dt, effects = EFFECTS_PROFILE.full) {
     this.pulse = Math.max(0, this.pulse - dt / 0.45)
-    if (this.pulse < 0.01 || P.varnish <= 0.01) return
-    const k = this.pulse * this.pulse            // ease out — a bloom, not a blink
+    if (this.pulse < 0.01 || P.varnish <= 0.01 || effects.rewardWash <= 0) return
+    const k = this.pulse * this.pulse * effects.rewardWash // ease out — a bloom, not a blink
     const cx = w / 2, cy = h / 2
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
@@ -361,6 +438,13 @@ export class Renderer {
     if (!motif || P.varnish <= 0.01) return
     const art = MOTIF_ART[motif.id]
     if (!art) return
+    if (art.draw) {
+      ctx.save()
+      ctx.globalAlpha = (art.alpha ?? 1) * P.varnish
+      art.draw(ctx, { R: this, P, motif, time: this._t })
+      ctx.restore()
+      return
+    }
     if (!art.img) {
       if (typeof Image === 'undefined') return
       art.img = new Image()
@@ -1417,11 +1501,11 @@ export class Renderer {
    * heso burst. At varnish 0 they go dark — they are pure celebration, and
    * losing the light show is exactly what the switch is for.
    */
-  lamps (ctx, P, m, dop, dt) {
+  lamps (ctx, P, m, dop, dt, effects = EFFECTS_PROFILE.full) {
     this.lampPulse = Math.max(0, this.lampPulse - dt / 0.9)
     const v = P.varnish
     if (v <= 0.01) return
-    const t = this._t
+    const t = this._t * effects.motion
 
     // Positions, built once: top row then upper sides.
     // Rebuilt when the board's readout claims margin space — lamps that fall
@@ -1483,7 +1567,7 @@ export class Renderer {
       if (this.lampPulse > 0 && !(reach && i >= 12)) {
         b = Math.max(b, this.lampPulse * (0.45 + 0.55 * Math.sin(this.lampPulse * 21)))
       }
-      const lit = Math.max(0, Math.min(1, b)) * v
+      const lit = Math.max(0, Math.min(1, b)) * v * effects.lamps
       if (lit < 0.03) continue
       const x = this.X(pos[i].x), y = this.Y(pos[i].y)
       const r = Math.max(1.6, this.S(0.0042))
@@ -1525,16 +1609,16 @@ export class Renderer {
   }
 
   /** Prediction-error flashes: the visible δ. */
-  flashLayer (ctx, P, dt) {
+  flashLayer (ctx, P, dt, effects = EFFECTS_PROFILE.full) {
     for (let i = this.flashes.length - 1; i >= 0; i--) {
       const f = this.flashes[i]
       f.t += dt
       const life = 0.55
       if (f.t > life) { this.flashes.splice(i, 1); continue }
       const k = 1 - f.t / life
-      const R = this.S(0.010 + 0.055 * (1 - k) * Math.min(2, Math.abs(f.d)))
+      const R = this.S(0.010 + 0.055 * (1 - k) * Math.min(2, Math.abs(f.d)) * effects.motion)
       const warm = f.d >= 0
-      ctx.globalAlpha = k * k * P.varnish
+      ctx.globalAlpha = k * k * P.varnish * effects.flash
       ctx.strokeStyle = hsl(warm ? 44 : 214, warm ? 0.9 : 0.5, warm ? 0.62 : 0.5)
       ctx.lineWidth = Math.max(1, 3 * k)
       ctx.beginPath(); ctx.arc(this.X(f.x), this.Y(f.y), R, 0, TAU); ctx.stroke()

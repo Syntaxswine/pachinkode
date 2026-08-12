@@ -814,7 +814,7 @@ test('the provenance ledger accounts for every point, exactly', () => {
   assert.ok(P.byOrigin.aimed > 0 && P.byOrigin.lottery > 0)
 })
 
-test('the provenance ledger is read by nothing', () => {
+test('the provenance receipt can never feed back into scoring', () => {
   // The keystone contract: declared, wired, consumed by nothing. If a future
   // builder wires a consumer, they should delete this test on purpose rather
   // than discover it failing.

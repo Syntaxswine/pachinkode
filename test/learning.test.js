@@ -44,16 +44,16 @@ function play (balls, { seed = 3, dial = 0.20 } = {}) {
         case 'heso':
           counts.heso++
           if (ev.ball) counts.hesoWithBall++
-          dop.settle(ev.ball, 14); dop.push(14); counts.settles++
+          dop.push(dop.settle(ev.ball, 14)); counts.settles++
           break
         case 'tulip':
           counts.tulip++
-          dop.settle(ev.ball, TULIP_PAY); counts.settles++
+          dop.push(dop.settle(ev.ball, TULIP_PAY)); counts.settles++
           break
-        case 'attacker': dop.settle(ev.ball, m.S.payPerEntry); counts.settles++; break
+        case 'attacker': dop.push(dop.settle(ev.ball, m.S.payPerEntry)); counts.settles++; break
         case 'warp': dop.carry(ev.ball, ev.into); break
         case 'drain':
-        case 'foul': dop.settle(ev.ball, 0); counts.settles++; break
+        case 'foul': dop.push(dop.settle(ev.ball, 0)); counts.settles++; break
       }
     }
     dop.update(DT, { balls: m.world.balls.length, impacts: 0 })

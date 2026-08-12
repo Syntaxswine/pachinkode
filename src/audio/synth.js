@@ -36,9 +36,9 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
  *                earned by being uninformative, not by being quiet; the nail
  *                rain at 142 strikes/s is the purest member here.
  *   predictive — allowed to precede a reward, but only where the prediction is
- *                real and MEASURED. Currently only the reach (two symbols
- *                matched, third crawling) and the Shepard descent, which runs
- *                under a jackpot already won.
+ *                real and MEASURED: reach (two symbols matched, third
+ *                crawling), warp delivery above the heso, and the Shepard
+ *                descent under a jackpot already won.
  *   milestone  — about the RUN's own scoreboard, not the machine's ledger.
  *                Fires exactly when a printed threshold is crossed — the
  *                quota, whose bar the player has watched fill — so it is
@@ -53,7 +53,7 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
  *                and its own law is checkable: a milestone voice may only
  *                ever sound in the same frame its threshold event fired.
  *
- * Nothing reads this yet. That is deliberate — see the keystone.
+ * ConditioningLedger reads these marks as evidence; it never writes back.
  */
 // ── an observation worth recording ──────────────────────────────────────────
 //
@@ -78,11 +78,11 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x)
 export const CUE_FAMILY = {
   heso: 'reward',
   tulip: 'reward',
-  koatari: 'reward',
-  kakuhen: 'reward',
-  jackpot: 'reward',
+  koatari: 'predictive',
+  kakuhen: 'predictive',
+  jackpot: 'predictive',
   cascade: 'reward',
-  jackpotBuild: 'reward',
+  jackpotBuild: 'predictive',
 
   impact: 'mechanism',
   split: 'mechanism',
@@ -91,7 +91,11 @@ export const CUE_FAMILY = {
   launch: 'mechanism',
   ratchet: 'mechanism',
   foul: 'mechanism',
-  gate: 'mechanism',
+  // The same solenoid has two audibly distinct directions. Opening changes
+  // the board into a payout-bearing state; closing only reports mechanism
+  // state and must never borrow the opening's predictive evidence.
+  gateOpen: 'predictive',
+  gateClose: 'mechanism',
   jam: 'mechanism',
   spinTick: 'mechanism',
   lose: 'mechanism',
@@ -99,14 +103,24 @@ export const CUE_FAMILY = {
   select: 'mechanism',
 
   reach: 'predictive',
+  warp: 'predictive',
   shepard: 'predictive',
 
   quota: 'milestone',
-  descend: 'milestone'
+  descend: 'milestone',
+  chain: 'milestone'
 }
 
 /** How many cue marks the ring buffer holds. Bounded so a long session cannot grow. */
 const CUE_LOG_MAX = 4096
+
+// Which user volume bus carries each named voice. Everything not listed is a
+// physical/UI impact. This makes the receipt conservative when one bus is set
+// to zero instead of pretending the silent family was heard.
+const REWARD_BUS_CUES = new Set([
+  'heso', 'tulip', 'koatari', 'kakuhen', 'jackpot', 'cascade', 'jackpotBuild',
+  'reach', 'warp', 'shepard', 'quota', 'descend', 'chain', 'lose'
+])
 
 // Shepard glissando geometry, kept as a pure function so the illusion can be
 // verified in Node without a WebAudio context. See Synth.shepard() for what it
@@ -141,10 +155,17 @@ export class Synth {
     this._slot = 0
     this._frameT0 = 0
     // The cue log — the keystone's socket. Every voice stamps itself here with
-    // the time it sounded and the family it claims to belong to. NOTHING READS
-    // IT. Wire a consumer and the machine's own conditioning becomes
-    // measurable; see docs/HANDOFF.md.
+    // the time it sounded and the family it claims to belong to. The streaming
+    // ConditioningLedger consumes a copy; neither log can reach the machine.
     this.cues = []
+    this._rainTarget = 0
+    this._rainDuckUntil = 0
+    this._clock = null
+    this._cueObserver = null
+    // Headless audits have no AudioContext, so they must opt into a declared
+    // virtual listening environment. Production never enables this: its
+    // receipt records only sound that could actually reach the speakers.
+    this._virtualAudio = false
   }
 
   /**
@@ -152,18 +173,29 @@ export class Synth {
    * standing between this project and an unfalsifiable claim about what its
    * sounds are teaching.
    *
-   * SEMANTICS, and they matter to the instrument: the log records voices that
-   * actually SOUNDED. Suppression by the impact budget or by the varnish gate
-   * is deliberately not recorded, because a cue nobody heard cannot condition
-   * anything. Suppression by `!ready` is a different case — that is a headless
-   * or pre-gesture run — and those marks are kept so the log can be gathered
-   * without a WebAudio context.
+   * SEMANTICS, and they matter to the instrument: the production log records
+   * voices that actually COULD BE HEARD. Pre-gesture, muted, suspended-context,
+   * and zero-volume voices are silence and are not evidence. A headless audit
+   * can opt into virtual audio explicitly; that mode is never used by the game.
    */
-  mark (name) {
-    const t = this.ready ? this.ctx.currentTime : 0
-    this.cues.push({ t, name, family: CUE_FAMILY[name] || 'unknown' })
+  mark (name, channel = REWARD_BUS_CUES.has(name) ? 'rewards' : 'impacts') {
+    const audible = this._virtualAudio || (
+      this.ready && !this.muted && this.ctx?.state === 'running' && this.vol.master > 0 &&
+      this.vol[channel] > 0
+    )
+    if (!audible) return false
+    const t = Number.isFinite(this._clock) ? this._clock : this.ready ? this.ctx.currentTime : 0
+    const cue = { t, name, family: CUE_FAMILY[name] || 'unknown' }
+    this.cues.push(cue)
     if (this.cues.length > CUE_LOG_MAX) this.cues.splice(0, this.cues.length - CUE_LOG_MAX)
+    if (this._cueObserver) this._cueObserver(cue)
+    return true
   }
+
+  setClock (t) { this._clock = Number.isFinite(t) ? t : null }
+  setCueObserver (fn) { this._cueObserver = typeof fn === 'function' ? fn : null }
+  setVirtualAudio (enabled) { this._virtualAudio = enabled === true }
+  resetCues () { this.cues.length = 0 }
 
   /** Must be called from a user gesture; browsers will not start audio otherwise. */
   async start () {
@@ -173,7 +205,7 @@ export class Synth {
     const ctx = this.ctx = new AC()
 
     this.master = ctx.createGain()
-    this.master.gain.value = this.vol.master
+    this.master.gain.value = this.muted ? 0 : this.vol.master
     // A compressor doing limiter duty, so a jackpot with forty balls landing at
     // once will not clip in steady state. It is not a brickwall — with a 30 dB
     // soft knee and a 3 ms attack a very fast transient can still overshoot.
@@ -275,7 +307,10 @@ export class Synth {
     if (!this.ready) return
     const v = clamp(varnish)
     const g = Math.min(0.11, 0.05 * Math.pow(Math.max(0, rate) / 90, 1.5)) * (0.45 + 0.55 * v)
-    this.rainGain.gain.setTargetAtTime(g, this.ctx.currentTime, 0.12)
+    this._rainTarget = g
+    const now = this.ctx.currentTime
+    const target = now < this._rainDuckUntil ? g * 0.5 : g
+    this.rainGain.gain.setTargetAtTime(target, now, 0.12)
   }
 
   /** Called every frame. `varnish` scales the whole expressive layer. */
@@ -453,6 +488,24 @@ export class Synth {
     o.start(t); o.stop(t + 2.5)
   }
 
+  /** A warp genuinely predicts a high-probability delivery above the heso. */
+  warp (varnish = 1) {
+    this.mark('warp')
+    const v = clamp(varnish)
+    this.tone(392, 0.12, 0.08 * (0.45 + 0.55 * v), 'triangle')
+    this.tone(294, 0.20, 0.07 * (0.45 + 0.55 * v), 'sine', null, 0.06)
+  }
+
+  /** The run's chain crossed a printed eight-hit threshold. */
+  chain (depth = 8, varnish = 1) {
+    this.mark('chain')
+    const v = clamp(varnish)
+    const tier = Math.min(4, Math.max(0, Math.floor(depth / 8) - 1))
+    const root = 147 * Math.pow(2, tier / 12)
+    this.tone(root, 0.12, 0.07 * (0.4 + 0.6 * v), 'square')
+    this.tone(root * 1.5, 0.18, 0.06 * (0.4 + 0.6 * v), 'triangle', null, 0.035)
+  }
+
   /**
    * A losing spin. Silent at full varnish — not because real parlours are quiet
    * (they are among the loudest public spaces in Japan; BGM and reel-stop sounds
@@ -624,7 +677,7 @@ export class Synth {
    * ever plays when a jackpot has already been won.
    */
   jackpotBuild (dur = 2.6, size = 0.5, varnish = 1) {
-    this.mark('jackpotBuild')
+    this.mark('jackpotBuild', clamp(varnish) < 0.5 ? 'impacts' : 'rewards')
     if (!this.ready) return
     const v = clamp(varnish)
     const ctx = this.ctx
@@ -873,7 +926,7 @@ export class Synth {
   }
 
   gate (open, varnish = 1) {
-    this.mark('gate')
+    this.mark(open ? 'gateOpen' : 'gateClose')
     if (!this.ready) return
     const v = clamp(varnish)
     const ctx = this.ctx
@@ -906,6 +959,16 @@ export class Synth {
     this.mark('cascade')
     if (!this.ready) return
     const v = clamp(varnish)
+    // The tray lives below the brass rain in both pitch and mix. Duck the rain
+    // by roughly 6 dB for 250 ms so payment reads as a separate physical layer.
+    const now = this.ctx.currentTime
+    this._rainDuckUntil = Math.max(this._rainDuckUntil, now + 0.25)
+    if (this.rainGain) {
+      const p = this.rainGain.gain
+      p.cancelScheduledValues(now)
+      p.setTargetAtTime(Math.min(p.value, this._rainTarget) * 0.5, now, 0.012)
+      p.setTargetAtTime(this._rainTarget, now + 0.25, 0.06)
+    }
     const count = Math.min(10, Math.max(1, Math.round(n / 3)))
     for (let i = 0; i < count; i++) {
       const ctx = this.ctx
@@ -915,8 +978,8 @@ export class Synth {
       nz.playbackRate.value = 1.4 + Math.random() * 0.8
       const bp = ctx.createBiquadFilter()
       bp.type = 'bandpass'
-      bp.frequency.value = 2200 + Math.random() * 2600
-      bp.Q.value = 2
+      bp.frequency.value = 520 + Math.random() * 980
+      bp.Q.value = 1.4
       const g = ctx.createGain()
       g.gain.setValueAtTime(0.10 * (0.4 + 0.6 * v), t)
       g.gain.exponentialRampToValueAtTime(0.0005, t + 0.10)
