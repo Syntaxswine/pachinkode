@@ -429,7 +429,51 @@ polygon and it renders like one. The authoring pipeline for the real thing alrea
 in-browser, Moore walk, arc resample, thin to ≥18.5 mm, then solve against the gate rather than
 hand-placing (which failed six times). Feed it art, not vectors.
 
-### 7. Second looks at things already shipped
+### 7. The receipt answered Builder 3's open question, and the answer is a problem
+
+Builder 3 built the provenance ledger, measured a single floor, and wrote down the question it
+could not answer:
+
+> *over a FULL RUN, where jackpots have time to arrive and the chain has time to hit its cap, do
+> those two lines cross?*
+
+The receipt makes that askable, so I asked it — 8 full runs, THE FLOOR MACHINE, balanced
+drafting, points pooled by the floor they were earned on:
+
+```
+ floor   lottery share      chain share
+     1     43.6%  ███████████     57.0%  ██████████████
+     2     45.7%  ███████████     64.0%  ████████████████
+     3     34.2%  █████████       60.3%  ███████████████
+     4     27.0%  ███████         63.0%  ████████████████
+     5     44.6%  ███████████     69.1%  █████████████████
+     6     22.2%  ██████          66.1%  █████████████████
+     7     10.5%  ███             66.9%  █████████████████
+     8      3.9%  █               65.0%  ████████████████
+     9      1.3%                  63.7%  ████████████████
+    10      0.0%                  54.4%  ██████████████
+    11      0.0%                  51.6%  █████████████
+    12      0.0%                  47.3%  ████████████
+    13      0.0%                  50.5%  █████████████
+    14      0.0%                  52.5%  █████████████
+```
+
+**They never cross. The lottery goes to zero.** By floor 10 not one point of the score comes from
+the RNG, and it stays that way through overtime, while the chain holds 47–69% the whole way down.
+
+The mechanism is the wall itself. A jackpot pays a fixed number of **balls**; the quota grows at
+×3.117 per floor. Those balls convert to score at the board's rate, which grows only with parts —
+about ×1.25–1.30 per floor. So the lottery's contribution decays against the wall by roughly ×2.4
+every floor and is arithmetically irrelevant by the second half of a run.
+
+That is worth sitting with, because the cabinet ladder walks toward **URAMONO** — the illegal
+back-room ROM machine whose entire identity is that the lottery is rigged in your favour. The
+ladder currently ends somewhere the lottery cannot matter.
+
+*(n = 8, one cabinet, one drafting policy, one bank threshold, scratch harness. The floor-5 bump
+is one lucky jackpot in a small pool. The shape either side of it is not subtle.)*
+
+### 8. Second looks at things already shipped
 
 * **The wave** is measured, shown, and currently free to ignore: `--wavecheck` found the chain
   share did *not* separate between surfing and resting, because the chain rebuilds too fast for
