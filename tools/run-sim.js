@@ -32,7 +32,7 @@
 
 import { Machine, FIRE_RATES, WAVE, waveW } from '../src/sim/machine.js'
 import { DT } from '../src/sim/world.js'
-import { Run, quotaFor, QUOTA_BASE, QUOTA_GROWTH, BALLS_BASE, FLOORS } from '../src/sim/run.js'
+import { Run, quotaFor, QUOTA_BASE, QUOTA_GROWTH, BALLS_BASE, FLOORS, LAST_FLOOR } from '../src/sim/run.js'
 import { CABINETS, CABINET_ORDER } from '../src/sim/cabinets.js'
 import { PART_BY_ID, drawOffers, resolveLoadout } from '../src/sim/loadout.js'
 
@@ -198,7 +198,7 @@ function playRun (cabKey, seed, siteTally) {
   // is how deep overtime goes.
   const FLOOR_CAP = num('cap', FLOORS + 24)
   let guard = 0
-  while (run.status !== 'failed' && guard++ < FLOOR_CAP) {
+  while (!run.finished && guard++ < FLOOR_CAP) {
     const floor = run.floor
     const quota = run.quota
     const balls = run.ballsLeft
@@ -206,7 +206,10 @@ function playRun (cabKey, seed, siteTally) {
     trace.push({
       floor, quota, balls,
       score: run.floorScore,
-      cleared: run.status === 'cleared',
+      // 'closed' is a CLEAR too — it is the last floor, cleared, ending the
+      // run. Counting only 'cleared' printed the last floor as 0% cleared
+      // forever, which read as a wall the instrument had invented.
+      cleared: run.status === 'cleared' || run.status === 'closed',
       launched: stats.launched,
       jackpots: stats.jackpots,
       launchedAtQuota: run.launchedAtQuota || stats.launched,
@@ -222,7 +225,7 @@ function playRun (cabKey, seed, siteTally) {
       run.drain()
     }
   }
-  if (run.status !== 'failed') {
+  if (!run.finished) {
     truncated++
   }
   return { run, trace }
@@ -371,7 +374,8 @@ if (flag('curve')) {
   const cleared = {}
   const cost = {}
   const bump = (o, f, v) => { (o[f] = o[f] || []).push(v) }
-  let wins = 0
+  let wins = 0, closes = 0
+  const deaths = []
   const scores = []
   for (let i = 0; i < N; i++) {
     const { run, trace } = playRun(cab, i + 1)
@@ -383,6 +387,7 @@ if (flag('curve')) {
       }
     }
     if (run.cleared) wins++
+    if (run.closed) closes++; else deaths.push(run.floor)
     scores.push(run.score)
   }
   const mean = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
@@ -405,6 +410,15 @@ if (flag('curve')) {
   scores.sort((a, b) => a - b)
   console.log(`\n  runs won: ${wins}/${N}   median score ${nf(scores[N >> 1])}` +
     `   best ${nf(scores[N - 1])}`)
+  // CLOSING TIME: the run has an end now, so the question is no longer how
+  // deep overtime goes but whether the last floor is REACHABLE and a FIGHT.
+  // Both failure modes are bad: nobody closing means the cap is decoration,
+  // everybody closing means overtime is still a victory lap with a door on it.
+  deaths.sort((a, b) => a - b)
+  const dmed = deaths.length ? deaths[deaths.length >> 1] : null
+  console.log(`  reached CLOSING TIME (floor ${LAST_FLOOR}): ${closes}/${N}` +
+    (deaths.length ? `   the other ${deaths.length} died on floor ` +
+      `${deaths[0]}–${deaths[deaths.length - 1]} (median ${dmed})` : ''))
   // The crossover: the first floor from which clearing costs less than HALF the
   // tray, and never costs more again. That is the moment the player's curve has
   // overtaken the wall for good — before it, every floor is a fight to the last

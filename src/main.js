@@ -16,7 +16,7 @@ import { MOTIFS } from './sim/motifs.js'
 import { Synth } from './audio/synth.js'
 import { ConditioningLedger, formatConditioningSummary } from './audio/conditioning.js'
 import { Hud } from './ui/hud.js'
-import { Run, FLOORS, quotaFor, BALLS_BASE, SHOP, sandboxCabinet, denomFor } from './sim/run.js'
+import { Run, FLOORS, LAST_FLOOR, quotaFor, BALLS_BASE, SHOP, sandboxCabinet, denomFor } from './sim/run.js'
 import { CABINETS, CABINET_ORDER, isUnlocked, unlockText, recordRun, newMeta } from './sim/cabinets.js'
 import { PART_BY_ID, countPart, autoFireInterval } from './sim/loadout.js'
 import { scoreTier } from './render/palette.js'
@@ -261,8 +261,8 @@ function syncMeta () {
   // principle stapled to it.
   const btn = $('#resumeRun')
   // A sandbox is not a run to resume — FREE PLAY is its own door.
-  btn.style.display = run && !run.sandbox && run.status !== 'failed' ? '' : 'none'
-  if (run && !run.sandbox && run.status !== 'failed') {
+  btn.style.display = run && !run.sandbox && !run.finished ? '' : 'none'
+  if (run && !run.sandbox && !run.finished) {
     $('#resumeSub').textContent =
       `${run.cabinet.label} · floor ${run.floor} · ${fmt(run.score)} banked · ` +
       `${run.ballsLeft} balls in the tray`
@@ -595,7 +595,9 @@ function afterDraft () {
   if (run.status === 'cleared') { syncBackroom(); return }
   buildFloor()
   go('play')
-  banner(run.floor > FLOORS ? `OVERTIME ${run.floor - FLOORS}` : `FLOOR ${run.floor}`,
+  banner(run.floor === LAST_FLOOR ? '最終階  THE LAST FLOOR'
+    : run.floor > FLOORS ? `OVERTIME ${run.floor - FLOORS} / ${LAST_FLOOR - FLOORS}`
+      : `FLOOR ${run.floor}`,
     `${fmt(run.quota)} to clear · ${run.ballsLeft} balls`)
 }
 
@@ -604,16 +606,26 @@ function afterDraft () {
 function endRun () {
   const unlocked = recordRun(state.meta, run, Date.now())
   save()
-  $('#roHead').textContent = run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
+  // THREE endings now, and they are genuinely different things: the wall caught
+  // you on the way up, the wall caught you in overtime, or you walked out of the
+  // top of the building. Only the last one is finishing the game.
+  $('#roHead').textContent = run.closed
+    ? '閉店  CLOSING TIME'
+    : run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
   $('#roScore').textContent = fmt(run.score)
   const deepest = run.floor
-  $('#roSub').textContent = run.cleared
-    ? `Cleared all ${FLOORS} floors and went ${deepest - FLOORS} deep into overtime before ` +
-      `floor ${deepest} out-ran the board — ${fmt(run.quota - run.floorScore)} short with an ` +
-      `empty tray. ${run.loadout.parts.length} parts fitted; longest chain ${run.bestChain}.`
-    : `Floor ${deepest} wanted ${fmt(run.quota)} and the tray ran out ` +
-      `${fmt(run.quota - run.floorScore)} short. ${run.loadout.parts.length} parts fitted; ` +
-      `longest chain ${run.bestChain}.`
+  $('#roSub').textContent = run.closed
+    ? `All ${LAST_FLOOR} floors. Twelve to bank the win and twelve more to prove it — ` +
+      `the last one wanted ${fmt(run.quota)} and got ${fmt(run.floorScore)}. There is no ` +
+      `twenty-fifth floor; the parlour shuts and the staff go home. ` +
+      `${run.loadout.parts.length} parts fitted; longest chain ${run.bestChain}.`
+    : run.cleared
+      ? `Cleared all ${FLOORS} floors and went ${deepest - FLOORS} deep into overtime before ` +
+        `floor ${deepest} out-ran the board — ${fmt(run.quota - run.floorScore)} short with an ` +
+        `empty tray. ${run.loadout.parts.length} parts fitted; longest chain ${run.bestChain}.`
+      : `Floor ${deepest} wanted ${fmt(run.quota)} and the tray ran out ` +
+        `${fmt(run.quota - run.floorScore)} short. ${run.loadout.parts.length} parts fitted; ` +
+        `longest chain ${run.bestChain}.`
 
   const P = run.provenance
   const originTotal = (P.byOrigin.aimed || 0) + (P.byOrigin.lottery || 0)
@@ -703,7 +715,7 @@ for (const [key, S] of Object.entries(SPECS)) {
     // screen. During a run the CABINET owns the spec, so this is refused
     // outright rather than allowed to quietly cost somebody eight floors.
     // A sandbox restarts freely; its wallet is the cost the player accepted.
-    if (run && !run.sandbox && run.status !== 'failed') {
+    if (run && !run.sandbox && !run.finished) {
       banner('NOT MID-RUN', 'the cabinet chose the class — this is a FREE PLAY setting')
       return
     }
@@ -1135,6 +1147,10 @@ function drainRun () {
         break
 
       case 'runFailed':
+      case 'runClosed':
+        // Two endings, one exit. A failed run is one the wall caught; a closed
+        // run is one the player took to the end of the building — endRun tells
+        // them apart, but the machine has to be put down the same way either way.
         machine.cancelCharge()
         firingHeld = false
         synth.shepardStop()

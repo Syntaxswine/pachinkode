@@ -276,9 +276,57 @@ export const BALLS_BASE = 160
 export const EFFECTIVE_GROWTH = 1.30
 export const DENOM_GROWTH = QUOTA_GROWTH / EFFECTIVE_GROWTH
 
-/** The score multiplier a floor's denomination applies to every point. */
+// ── CLOSING TIME, AND THE OVERTIME BITE ─────────────────────────────────────
+//
+// Overtime used to be unbounded. It ended the way a geometric wall always ends
+// a quadratic exponent — eventually — and "eventually" measured out around
+// floor 36. The operator played it and reached floor 35 in under a minute, and
+// the reason is in the curve tool's own cost column: past the crossover every
+// overtime floor cleared on about ONE PER CENT of its tray. Two dozen floors of
+// pressing fire and watching a formality resolve. Depth was bought with
+// patience, not with play.
+//
+// The ruling (2026-08-12): twelve floors to bank the win and twelve more to
+// prove it — and bump the wall up proportionally so the cap lands where floor
+// 35 used to. Both halves of that matter. A cap alone would just stop the
+// victory lap earlier; the bump is what makes floor 24 a place you FAIL rather
+// than the place the game stops counting.
+//
+// So OVERTIME_BITE is DERIVED, not chosen — the same move as the denomination
+// above. Pin the two design statements (the cap is 24, and 24 must demand what
+// 35 demanded) and the ratio is what connects them:
+//
+//     1.30^(35−24) spread over 12 overtime floors  =  1.30^(11/12)  ≈  1.2719
+//
+// which makes an overtime floor demand ×1.65 instead of ×1.30, and lands new
+// floor 24 on old floor 35 to six decimal places.
+//
+// It bites through the DENOMINATION rather than the quota, and that is the
+// whole trick. Steepening `quotaFor` would have pushed floor 24's printed
+// number from 842 trillion to 7×10^16 — past MAX_SAFE_INTEGER, into the range
+// where this game is honestly printing approximations. Slowing the denomination
+// instead leaves every printed quota exactly on the ladder it already had, so
+// the summit still reads one billion and the last floor is still an exactly
+// representable integer, while the fight underneath steepens by precisely the
+// intended factor. It also has the better story: the deeper you go, the less
+// the house pays per hit. Same nails, smaller money.
+export const OVERTIME_FLOORS = FLOORS               // twelve, and twelve again
+export const LAST_FLOOR = FLOORS + OVERTIME_FLOORS  // 24 — the parlour closes
+export const OVERTIME_REACH = 35                    // where the old ladder ran to
+export const OVERTIME_BITE =
+  Math.pow(EFFECTIVE_GROWTH, (OVERTIME_REACH - LAST_FLOOR) / OVERTIME_FLOORS)
+
+/**
+ * The score multiplier a floor's denomination applies to every point.
+ *
+ * Floors 1–12 are untouched, byte for byte — the whole measured curve three
+ * builders tuned (crossover 6, the 2–5 crunch, the on-ramp) lives there and
+ * must not move. Overtime divides the denomination down, which is the same
+ * thing as multiplying the effective wall up. See CLOSING TIME above.
+ */
 export function denomFor (floor) {
-  return Math.pow(DENOM_GROWTH, floor - 1)
+  const over = Math.max(0, floor - FLOORS)
+  return Math.pow(DENOM_GROWTH, floor - 1) / Math.pow(OVERTIME_BITE, over)
 }
 
 // The first floor is an ON-RAMP (operator's ruling): easy to finish, and
@@ -389,6 +437,7 @@ export class Run {
 
     this.status = 'playing'     // playing | cleared | failed
     this.cleared = false        // has floor 12 been beaten? banked, permanent
+    this.closed = false         // has floor 24 been cleared? the parlour shuts
     this.metQuota = false       // this floor's quota has been met at least once
     this.banked = 0             // balls carried into the next floor
     this.offers = null          // the current draft, or null
@@ -760,6 +809,10 @@ export class Run {
   }
 
   clearFloor () {
+    // THE LAST FLOOR. Clearing 24 ends the run outright rather than dealing a
+    // back room whose parts have nowhere left to be fitted — an offer the
+    // player cannot spend is not a decision, it is a delay. See CLOSING TIME.
+    if (!this.sandbox && this.floor >= LAST_FLOOR) { this.close(); return }
     this.status = 'cleared'
     this.picksLeft = this.picksEarned()
     this.emit('floorCleared', {
@@ -847,6 +900,10 @@ export class Run {
    * quadratic exponent. It always does. It just takes a while.
    */
   next () {
+    // Belt and braces: clearFloor closes on the last floor, so this should be
+    // unreachable. It is here because `next` is public and a future caller
+    // that has not read clearFloor would otherwise walk straight past the cap.
+    if (!this.sandbox && this.floor >= LAST_FLOOR) { this.close(); return }
     this.floor++
     if (this.floor > FLOORS && !this.cleared) {
       this.cleared = true
@@ -883,6 +940,25 @@ export class Run {
    * whatever surplus picks the extra balls bought. Without this check, choosing
    * PUSH ON and succeeding at it would end the run.
    */
+  /**
+   * CLOSING TIME — the twenty-fourth floor is cleared and the parlour shuts.
+   *
+   * Distinct from `fail()` on purpose. A failed run is one the wall caught; a
+   * closed run is one the player took all the way to the end of the building.
+   * Both finish the run, which is why `finished` exists rather than three
+   * `status !== 'failed'` checks scattered across the shell.
+   */
+  close () {
+    this.status = 'closed'
+    this.closed = true
+    this.emit('runClosed', {
+      floor: this.floor, score: this.score, floors: LAST_FLOOR
+    })
+  }
+
+  /** Is this run over, by either ending? */
+  get finished () { return this.status === 'failed' || this.status === 'closed' }
+
   fail () {
     if (this.metQuota) { this.banked = 0; this.clearFloor(); return }
     this.status = 'failed'

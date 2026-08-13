@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_BASE, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN, FLOOR1_EASE, SHOP, sandboxCabinet, QUOTA_TOP, EFFECTIVE_GROWTH, DENOM_GROWTH, denomFor } from '../src/sim/run.js'
+import { Run, quotaFor, picksFor, ballsFor, BALLS_BASE, chainMult, SCORE, FLOORS, QUOTA_BASE, QUOTA_GROWTH, MAX_SURPLUS_PICKS, SCORE_ORIGIN, FLOOR1_EASE, SHOP, sandboxCabinet, QUOTA_TOP, EFFECTIVE_GROWTH, DENOM_GROWTH, denomFor, LAST_FLOOR, OVERTIME_BITE, OVERTIME_REACH } from '../src/sim/run.js'
 import {
   baseLoadout, resolveLoadout, drawOffers, partAvailable, countPart,
   PARTS, PART_BY_ID, BUCKET_SITES, SITE_ORDER, BUCKET_MOUTH_MAX
@@ -514,7 +514,8 @@ test('the denomination: floor 12 demands exactly one billion, and the fight unde
     'floor 12 must demand exactly 1,000,000,000')
   // The EFFECTIVE wall — quota divided by the floor's denomination — is the
   // old measured curve, byte-for-byte in ratio: 3,700 × 1.30^(floor−1).
-  for (let f = 2; f <= FLOORS + 6; f++) {
+  // THROUGH FLOOR 12 ONLY. Overtime bites; see the test below.
+  for (let f = 2; f <= FLOORS; f++) {
     const eff = quotaFor(f, null, 1) / denomFor(f)
     const old = QUOTA_BASE * Math.pow(EFFECTIVE_GROWTH, f - 1)
     // quotaFor rounds to whole points; a half-point of rounding on floor 2's
@@ -523,6 +524,75 @@ test('the denomination: floor 12 demands exactly one billion, and the fight unde
   }
   // Floor 1 pays face value; the sandbox always does.
   assert.equal(denomFor(1), 1)
+})
+
+test('overtime bites, and floor 24 demands exactly what floor 35 used to', () => {
+  // The operator reached floor 35 in under a minute and ruled: cap at 24, and
+  // bump the wall up proportionally so the cap lands where 35 was. Both halves
+  // are checked here, because the constant is DERIVED from them — if either
+  // design statement changes, this is the test that should fail first.
+  const eff = f => quotaFor(f, null, 1) / denomFor(f)
+  const oldEff = f => QUOTA_BASE * Math.pow(EFFECTIVE_GROWTH, f - 1)
+
+  assert.equal(LAST_FLOOR, 24, 'twelve floors, and twelve more')
+  assert.ok(Math.abs(eff(LAST_FLOOR) / oldEff(OVERTIME_REACH) - 1) < 1e-4,
+    `floor ${LAST_FLOOR} must demand what floor ${OVERTIME_REACH} demanded: ` +
+    `${eff(LAST_FLOOR)} vs ${oldEff(OVERTIME_REACH)}`)
+
+  // Every overtime floor demands EFFECTIVE_GROWTH × OVERTIME_BITE of the one
+  // above it — a bigger step than the ×1.30 that governs floors 1–12.
+  for (let f = FLOORS + 1; f <= LAST_FLOOR; f++) {
+    const step = eff(f) / eff(f - 1)
+    assert.ok(Math.abs(step / (EFFECTIVE_GROWTH * OVERTIME_BITE) - 1) < 1e-4,
+      `floor ${f} stepped ×${step.toFixed(4)}, want ×${(EFFECTIVE_GROWTH * OVERTIME_BITE).toFixed(4)}`)
+  }
+  assert.ok(EFFECTIVE_GROWTH * OVERTIME_BITE > EFFECTIVE_GROWTH * 1.2,
+    'the bite has to actually bite')
+
+  // THE BITE RIDES THE DENOMINATION, NOT THE QUOTA — that is what keeps the
+  // printed ladder where it was. Steepening quotaFor would have pushed floor
+  // 24's number past MAX_SAFE_INTEGER and made the game print approximations.
+  for (let f = 1; f <= LAST_FLOOR; f++) {
+    assert.equal(quotaFor(f, null, 1),
+      Math.round(QUOTA_BASE * Math.pow(QUOTA_GROWTH, f - 1) * (f === 1 ? 0.5 : 1)),
+      `floor ${f}'s PRINTED quota moved — the bite leaked into the wall`)
+  }
+  assert.ok(quotaFor(LAST_FLOOR, null, 1) < Number.MAX_SAFE_INTEGER,
+    'the last floor must still be a number this game can count exactly')
+})
+
+test('the parlour closes: there is no twenty-fifth floor', () => {
+  const run = new Run(cab, 5)
+  run.floor = LAST_FLOOR - 1
+  run.quota = 1
+  run.add(SCORE.bucket * 1000, 'bucket')          // meet floor 23's quota
+  assert.equal(run.metQuota, true)
+  run.bank()                                      // and take the door down
+  assert.equal(run.status, 'cleared', 'floor 23 should deal a back room as usual')
+  while (run.status === 'cleared' && run.picksLeft > 0) run.skip()
+  assert.equal(run.floor, LAST_FLOOR, 'floor 23 must descend to 24')
+  assert.equal(run.status, 'playing')
+  assert.equal(run.finished, false)
+
+  run.quota = 1
+  run.add(SCORE.bucket * 1000, 'bucket')          // meet floor 24's quota
+  run.bank()
+  assert.equal(run.status, 'closed', 'clearing the last floor must CLOSE the run')
+  assert.equal(run.closed, true)
+  assert.equal(run.finished, true)
+  assert.equal(run.floor, LAST_FLOOR, 'the run must not walk onto floor 25')
+  assert.ok(run.drain().some(e => e.type === 'runClosed'), 'closing must announce itself')
+
+  // And the belt-and-braces guard: calling next() past the cap cannot advance.
+  run.next()
+  assert.equal(run.floor, LAST_FLOOR)
+  assert.equal(run.status, 'closed')
+
+  // A sandbox has no floors and must be untouched by any of this.
+  const free = sbx()
+  free.floor = LAST_FLOOR + 40
+  free.next()
+  assert.equal(free.floor, LAST_FLOOR + 41, 'free play must keep counting')
 })
 
 test('the denomination scales the score and the keystone identity survives it', () => {

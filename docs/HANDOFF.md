@@ -1273,3 +1273,67 @@ have a summit to point at.
 Keep the switch. Trust the tools over the feeling — that is what they were built for.
 
 — *Builder 4 · Claude Fable 5 · 2026-07-30*
+
+## 2026-08-12 — CLOSING TIME, and why the wall could not be the lever
+
+Overtime used to be unbounded. The operator played it, reached **floor 35 in under a
+minute**, and ruled: cap it, and bump the wall up proportionally so the cap lands where 35 was.
+The cap is **floor 24** — twelve to bank the win, twelve more to prove it.
+
+**What shipped.** `LAST_FLOOR = 24`; `clearFloor()` closes the run there rather than dealing a
+back room whose parts have nowhere to be fitted; `Run#close()` sets a third status, `'closed'`,
+distinct from `'failed'` because *the wall caught you* and *you walked out of the top of the
+building* are not the same ending. `run.finished` exists so the shell and the tools stop asking
+`status !== 'failed'` in three places. The run-over screen gains a third headline, **閉店 CLOSING
+TIME**.
+
+**The bite is derived, not chosen** — the same move as THE DENOMINATION above. Pin the two design
+statements (the cap is 24; 24 must demand what 35 demanded) and the ratio connects them:
+`OVERTIME_BITE = 1.30^(11/12) ≈ 1.2719`, so an overtime floor demands ×1.65 instead of ×1.30, and
+new floor 24 lands on old floor 35 to six decimal places (test-pinned).
+
+**It bites through the DENOMINATION, not the quota, and that is the whole trick.** Steepening
+`quotaFor` would have pushed floor 24's printed number from 842 trillion to 7×10^16 — past
+`MAX_SAFE_INTEGER`, into the range where this game prints approximations. Slowing the
+denomination instead leaves every printed quota exactly where it was (the summit still reads one
+billion, the last floor is still an exact integer) while the fight underneath steepens by
+precisely the intended factor. A test asserts the printed ladder did not move, so a future
+builder who "simplifies" this by moving the factor into `quotaFor` will fail it.
+
+**Floors 1–12 are untouched, and that is checkable rather than claimed:** `quotaFor` is unchanged
+for every floor, `denomFor` is unchanged for f ≤ 12, and the existing effective-wall test now runs
+to 12 with the overtime invariant in its own test beside it.
+
+### THE MEASUREMENT THAT DID NOT COOPERATE — read this before touching the bite
+
+The second half of the ruling was that the cap should be *the place you fail*. Measured, the
+proportional bump does not do that, and neither does a much bigger one:
+
+```
+OVERTIME_REACH   bite    effective wall at f24   cost at f24   runs closing f24
+      35        1.272          ×1                    3%             9/10
+      40        1.419          ×2.4                  7%             9/10
+      45        1.583          ×5.7                 11%             9/10
+      50        1.766         ×13.8                 20%             9/10
+```
+
+Fourteen times the wall bought seven points of cost and moved the closing rate **not at all**.
+Cost grows roughly as the square root of the wall, and the closing rate is flat.
+
+**The blocker is the CLOCK, not the wall.** A run's budget is launches, and in overtime the tray
+*regenerates* — BALL RETURN converts payouts back into launches and banked balls ride along into
+the next floor — faster than a deep floor spends it. Raising the quota therefore mostly makes the
+player fire more balls from a tray that refills; it cannot catch a clock that grows. Extrapolating
+the table, an effective wall around ×250 the proportional value would be needed, at which point
+the printed ladder and the actual fight would have nothing to do with each other.
+
+So: **the next lever is the clock, not the quota.** Taper `ballsFor` in overtime, cap the carry
+harder past floor 12, or throttle BALL RETURN's refund rate with depth — and measure each against
+`run-sim --curve`'s new `reached CLOSING TIME` line, which is the number that actually answers the
+question. Do not simply keep raising `OVERTIME_REACH`; the table above is what that buys.
+
+**Instrument note.** `run-sim` counted only `status === 'cleared'` as a clear, so the moment the
+cap landed it printed floor 24 as **0% cleared forever** — a wall the instrument had invented.
+It now counts `'closed'` too, and prints `reached CLOSING TIME (floor 24): N/M` with the death
+floors of the runs that did not. A new ending needs the instruments told about it in the same
+commit, or the first measurement after it is a lie.
