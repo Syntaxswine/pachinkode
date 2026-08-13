@@ -1337,3 +1337,35 @@ cap landed it printed floor 24 as **0% cleared forever** — a wall the instrume
 It now counts `'closed'` too, and prints `reached CLOSING TIME (floor 24): N/M` with the death
 floors of the runs that did not. A new ending needs the instruments told about it in the same
 commit, or the first measurement after it is a lie.
+
+## 2026-08-12 — CASH OUT (換金): the run now pays wherever it stops
+
+**The bug, operator-found.** A run was recorded by exactly one call — `recordRun` inside the
+shell's `endRun` — and that call only ever happened when the tray ran dry. So the only way to be
+paid for a run was to play it until you **lost** it. Step out to the title on floor 20 and the run
+was still alive in memory, worth nothing; click NEW RUN or FREE PLAY and it was gone, silently,
+unrecorded — score, deepest floor, and every cabinet unlock it had earned.
+
+CLOSING TIME's measurement made it worse rather than better: in overtime the tray *regenerates*,
+so "just die" is not even a quick option. A player who wanted to stop had to sit there
+deliberately dumping balls into the drain to be allowed to keep their own score.
+
+**The distinction that was never written down.** A roguelike may not SAVE a run — that is what
+makes a death a death, and this one still refuses to (the save whitelist in `main.js` names `meta`
+and deliberately not `run`). Refusing to **pay** for a run the player chose to end is a completely
+different thing, and no rule anywhere asked for it.
+
+**What shipped.** `Run#cashOut()` — a fourth status, `'cashed'`, folded into `run.finished`. It
+refuses on a sandbox and on an already-finished run, and it is idempotent. Three wirings:
+
+* **CASH OUT 換金** sits beside RESUME RUN on the title screen — which is exactly where a player
+  goes when they want to stop — and takes them to the run-over screen, receipt and all.
+* **Every door that abandons a live run now pays it out on the way past** (`cashOutInPassing`):
+  picking a cabinet, and FREE PLAY. Recording can only ever help, so it does not ask.
+* A third run-over headline, with copy for both cases — a cashed floor may be **ahead** of its
+  quota, and printing `quota − floorScore` unconditionally produced "−6,447 left on its quota"
+  the first time it was driven past a met quota.
+
+**The test is the invariant, not the feature:** a run cashed out on floor 9 and a run that died on
+floor 9 with the same score must produce a `deepEqual` meta. If those ever diverge, cashing out has
+quietly become a penalty and the bug is back in a new shape.

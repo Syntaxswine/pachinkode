@@ -240,7 +240,7 @@ document.addEventListener('click', (e) => {
   // half-alive behind the free-play board was how the first build ended up
   // scoring a quota nobody was playing for. An existing sandbox is kept —
   // stepping out to the title and back must not reset the exhibit.
-  if (b.dataset.mode === 'free' && run && !run.sandbox) newSession()
+  if (b.dataset.mode === 'free' && run && !run.sandbox) { cashOutInPassing(); newSession() }
   go(b.dataset.go)
 })
 $('#toTitle').addEventListener('click', () => go('title'))
@@ -251,6 +251,31 @@ $('#resumeRun').addEventListener('click', () => {
   // reappears with it, because the bar is a function of the run's state.
   if (run.status === 'cleared') { syncBackroom(); go('backroom') } else go('play')
 })
+$('#cashOut').addEventListener('click', () => {
+  synth.start().then(() => synth.click())
+  if (!run || run.sandbox || run.finished) return
+  run.cashOut()
+  run.drain()          // consume the event here; the frame loop is not running
+  endRun()             // and give them the receipt, which is the whole point
+})
+
+/**
+ * Record a live run into the meta WITHOUT taking over the screen.
+ *
+ * Every door that walks away from a run in progress — NEW RUN, FREE PLAY —
+ * used to bin it silently, unrecorded. Nothing about that was a decision: the
+ * run's score, its deepest floor and every unlock it had earned simply
+ * evaporated because the player clicked the wrong button on the title. Cashing
+ * out on the way past costs nothing and can only ever help, so it does not ask.
+ */
+function cashOutInPassing () {
+  if (!run || run.sandbox || run.finished) return
+  run.cashOut()
+  run.drain()
+  recordRun(state.meta, run, Date.now())
+  save()
+  syncMeta()
+}
 
 // ── the cabinet select ─────────────────────────────────────────────────────
 
@@ -261,11 +286,18 @@ function syncMeta () {
   // principle stapled to it.
   const btn = $('#resumeRun')
   // A sandbox is not a run to resume — FREE PLAY is its own door.
-  btn.style.display = run && !run.sandbox && !run.finished ? '' : 'none'
-  if (run && !run.sandbox && !run.finished) {
+  const live = !!(run && !run.sandbox && !run.finished)
+  btn.style.display = live ? '' : 'none'
+  // CASH OUT rides beside RESUME, because the title screen is exactly where a
+  // player goes when they want to stop, and until now stopping paid nothing.
+  $('#cashOut').style.display = live ? '' : 'none'
+  if (live) {
     $('#resumeSub').textContent =
       `${run.cabinet.label} · floor ${run.floor} · ${fmt(run.score)} banked · ` +
       `${run.ballsLeft} balls in the tray`
+    $('#cashSub').textContent =
+      `take the tray to the counter — end the run here and keep ${fmt(run.score)}, ` +
+      `floor ${run.floor}, and anything it unlocked`
   }
   const m = state.meta
   // The headline record, on the title screen where a high score belongs.
@@ -360,7 +392,9 @@ function syncCabinets () {
           `${fitted ? ` · starts with ${fitted} part${fitted > 1 ? 's' : ''} already fitted`
             : c.motif ? ' · picture board — the layout is the artwork' : ' · stock board'}</span>`
         : `<span class="lock">${unlockText(c, state.meta)}</span>`)
-    if (open) b.addEventListener('click', () => { synth.click(); startRun(key); go('play') })
+    // Picking a cabinet abandons whatever run is live. Pay it out first —
+    // the old behaviour lost a floor-20 run to a misclick on the title.
+    if (open) b.addEventListener('click', () => { synth.click(); cashOutInPassing(); startRun(key); go('play') })
     host.appendChild(b)
   }
 }
@@ -611,10 +645,21 @@ function endRun () {
   // top of the building. Only the last one is finishing the game.
   $('#roHead').textContent = run.closed
     ? '閉店  CLOSING TIME'
-    : run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
+    : run.status === 'cashed' ? '換金  CASHED OUT'
+      : run.cleared ? 'THE MACHINE GAVE UP FIRST' : 'THE RUN ENDS'
   $('#roScore').textContent = fmt(run.score)
   const deepest = run.floor
-  $('#roSub').textContent = run.closed
+  // A cashed-out floor may be ahead OR behind its quota — the player chose the
+  // moment, not the machine. Printing `quota − floorScore` unconditionally gave
+  // "−6,447 left on its quota" the first time it was driven past a met quota.
+  const short = run.quota - run.floorScore
+  $('#roSub').textContent = run.status === 'cashed'
+    ? `You stopped on floor ${deepest} with ${run.ballsLeft} balls still in the tray, ` +
+      (short > 0 ? `${fmt(short)} short of its quota` : 'its quota already met') +
+      `. Nothing about that is a loss — the score, the floor and everything it ` +
+      `unlocked are yours. ` +
+      `${run.loadout.parts.length} parts fitted; longest chain ${run.bestChain}.`
+    : run.closed
     ? `All ${LAST_FLOOR} floors. Twelve to bank the win and twelve more to prove it — ` +
       `the last one wanted ${fmt(run.quota)} and got ${fmt(run.floorScore)}. There is no ` +
       `twenty-fifth floor; the parlour shuts and the staff go home. ` +
@@ -1148,6 +1193,7 @@ function drainRun () {
 
       case 'runFailed':
       case 'runClosed':
+      case 'runCashed':
         // Two endings, one exit. A failed run is one the wall caught; a closed
         // run is one the player took to the end of the building — endRun tells
         // them apart, but the machine has to be put down the same way either way.

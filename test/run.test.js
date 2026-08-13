@@ -561,6 +561,44 @@ test('overtime bites, and floor 24 demands exactly what floor 35 used to', () =>
     'the last floor must still be a number this game can count exactly')
 })
 
+test('cashing out ends the run where it stands, and it is worth the same as dying there', () => {
+  // THE BUG THIS FIXES: a run was recorded by exactly one call, on death alone.
+  // Stopping paid nothing — step out to the title on floor 20 and the score,
+  // the floor and every unlock it earned evaporated. So: a cashed-out run and
+  // a run that died on the same floor with the same score must produce the
+  // SAME meta. If they ever diverge, cashing out has become a penalty.
+  const mk = () => {
+    const r = new Run(cab, 31)
+    r.floor = 9
+    r.quota = Number.MAX_SAFE_INTEGER   // unmeetable, so the loser really loses
+    r.add(SCORE.bucket * 40, 'bucket')
+    return r
+  }
+  const cashed = mk(); const died = mk()
+  assert.equal(cashed.finished, false)
+  assert.equal(cashed.cashOut(), true)
+  assert.equal(cashed.status, 'cashed')
+  assert.equal(cashed.finished, true, 'a cashed run must count as over')
+  assert.ok(cashed.drain().some(e => e.type === 'runCashed'), 'cashing out must announce itself')
+
+  died.ballsLeft = 0
+  died.observe([], 0.016, { inFlight: 0 })
+  assert.equal(died.status, 'failed')
+
+  const a = newMeta(); const b = newMeta()
+  recordRun(a, cashed, 1000)
+  recordRun(b, died, 1000)
+  assert.deepEqual(a, b, 'stopping paid differently from dying — cashing out is a penalty')
+  assert.equal(a.bestFloor, 9)
+  assert.ok(a.lifetimeScore > 0, 'the run banked nothing at all')
+
+  // Idempotent, and refused where it makes no sense.
+  assert.equal(cashed.cashOut(), false, 'a finished run cashed out twice')
+  assert.equal(sbx().cashOut(), false, 'free play has no run to cash out')
+  const over = mk(); over.fail()
+  assert.equal(over.cashOut(), false, 'a dead run cashed out')
+})
+
 test('the parlour closes: there is no twenty-fifth floor', () => {
   const run = new Run(cab, 5)
   run.floor = LAST_FLOOR - 1

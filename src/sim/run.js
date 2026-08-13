@@ -956,8 +956,40 @@ export class Run {
     })
   }
 
-  /** Is this run over, by either ending? */
-  get finished () { return this.status === 'failed' || this.status === 'closed' }
+  /**
+   * CASH OUT — 換金. The player stops here, on their terms, and keeps it.
+   *
+   * This is the ending the game was missing, and its absence was a real bug
+   * rather than a missing nicety. A run is recorded — score, deepest floor,
+   * lifetime total, every cabinet unlock it earned — by exactly one call, in
+   * the shell's endRun, and that call only ever happened when the tray ran dry.
+   * So the only way to be paid for a run was to play it until you LOST it. Step
+   * out to the title and your floor 20 was still sitting in memory, worth
+   * nothing; start another run and it was gone.
+   *
+   * That is bad on its own and it got worse with CLOSING TIME's measurement: in
+   * overtime the tray REGENERATES, so "just die" is not even a quick option —
+   * a player who wanted to stop had to sit there deliberately dumping balls
+   * into the drain to be allowed to keep their own score.
+   *
+   * A roguelike may not SAVE a run — that is what makes a death a death, and
+   * this one still refuses to (see the save whitelist in main.js). Refusing to
+   * PAY for a run the player chose to end is a different thing entirely, and
+   * it was never a rule anybody wrote down.
+   */
+  cashOut () {
+    if (this.finished || this.sandbox) return false
+    this.status = 'cashed'
+    this.emit('runCashed', {
+      floor: this.floor, score: this.score, cleared: this.cleared
+    })
+    return true
+  }
+
+  /** Is this run over, by any of its three endings? */
+  get finished () {
+    return this.status === 'failed' || this.status === 'closed' || this.status === 'cashed'
+  }
 
   fail () {
     if (this.metQuota) { this.banked = 0; this.clearFloor(); return }
