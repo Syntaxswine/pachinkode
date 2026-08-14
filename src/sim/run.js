@@ -778,14 +778,42 @@ export class Run {
           // finding). It breaks before the refund pool so BALL RETURN cannot
           // double-dip the same pay.
           if (!this.sandbox && ev.source === 'hazure') { this.ballsLeft += ev.n; break }
+          break
+        }
+
+        // ── BALL RETURN — 玉戻し ──────────────────────────────────────────
+        //
+        // Operator's ruling, 2026-08-12: a quarter of the balls that go
+        // through the BOTTOM come back, rather than a quarter of the balls
+        // the machine PAYS OUT.
+        //
+        // This is a much bigger change than it reads as, and it is the fix
+        // for the thing CLOSING TIME measured and could not solve. Tied to
+        // payouts, the refund scaled with WINNING: a jackpot pays up to 1,500
+        // balls, so a good deep floor refunded the tray faster than it could
+        // possibly be spent, and the clock stopped being a clock. That is why
+        // fourteen times the wall bought nothing — the wall cannot catch a
+        // budget that grows.
+        //
+        // Tied to DRAINS it is bounded by construction. Nearly every launch
+        // ends in a drain, so a rate r returns about r launches per launch and
+        // the whole floor is a geometric series: the tray is worth 1/(1−r) of
+        // its face value, 1.33× at one stack, and it does not care how well
+        // the player is doing. The clock is a clock again.
+        //
+        // A drain is a ball that ENTERED PLAY and lost — that is exactly the
+        // event's contract in machine.js, which is careful to emit `foul` and
+        // not `drain` for a ball that never got going. So this pays back
+        // losses, never launches that never happened; the foul path still
+        // refunds those in full and must not double up here.
+        case 'drain':
           // Fractional, accumulated, and only ever spent in whole balls — a
           // quarter of a launch is not a thing the launcher can do.
           if (!this.sandbox && this.loadout.ballRefund > 0) {
-            this.refundPool += ev.n * this.loadout.ballRefund
+            this.refundPool += this.loadout.ballRefund
             while (this.refundPool >= 1) { this.refundPool--; this.ballsLeft++ }
           }
           break
-        }
       }
     }
 

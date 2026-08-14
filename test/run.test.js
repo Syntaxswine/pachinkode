@@ -142,14 +142,52 @@ test('payouts do not touch the clock without BALL RETURN', () => {
     'the tray refilled the clock — floors stop ending when this happens')
 })
 
-test('BALL RETURN converts payouts into launches, in whole balls', () => {
+test('BALL RETURN catches drained balls, in whole launches, and ignores payouts', () => {
+  // Operator's ruling: a quarter of the balls that go through the BOTTOM come
+  // back — not a quarter of the balls the machine pays out. The distinction is
+  // the whole point: a payout-linked refund scales with winning, so a good deep
+  // floor refills its own clock faster than it can spend it (see CLOSING TIME
+  // in docs/HANDOFF.md). A drain-linked refund is bounded by launches.
   const run = new Run(cab, 2)
   resolveLoadout(['refund'], run.loadout)            // 25%
   const start = run.ballsLeft
-  run.observe([{ type: 'pay', n: 2 }], 0.016, { inFlight: 1 })
-  assert.equal(run.ballsLeft, start, 'half a ball was launched')
-  run.observe([{ type: 'pay', n: 2 }], 0.016, { inFlight: 1 })
+
+  // A payout, however large, must no longer touch the clock.
+  run.observe([{ type: 'pay', n: 400, source: 'attacker' }], 0.016, { inFlight: 1 })
+  assert.equal(run.ballsLeft, start,
+    'a payout refilled the tray — BALL RETURN is paying for winning again')
+
+  for (let i = 0; i < 3; i++) run.observe([{ type: 'drain' }], 0.016, { inFlight: 1 })
+  assert.equal(run.ballsLeft, start, 'three quarters of a launch was launched')
+  run.observe([{ type: 'drain' }], 0.016, { inFlight: 1 })
   assert.equal(run.ballsLeft, start + 1, 'the accumulated quarters did not cash in')
+
+  // Without the part, a drain is just a drain.
+  const bare = new Run(cab, 2)
+  const b0 = bare.ballsLeft
+  for (let i = 0; i < 8; i++) bare.observe([{ type: 'drain' }], 0.016, { inFlight: 1 })
+  assert.equal(bare.ballsLeft, b0, 'a stock machine returned a drained ball')
+})
+
+test('BALL RETURN makes the tray worth a FIXED multiple, however the floor is going', () => {
+  // The property that matters, and the one the payout version did not have:
+  // what a tray is worth must not depend on how well the player is doing. Feed
+  // two runs the same drains and wildly different payouts; the clock must agree.
+  const play = (payPerDrain) => {
+    const run = new Run(cab, 9)
+    resolveLoadout(['refund', 'refund'], run.loadout)   // 50%
+    run.ballsLeft = 100
+    for (let i = 0; i < 200; i++) {
+      run.observe([{ type: 'launch' }], 0.016, { inFlight: 1 })
+      if (payPerDrain) run.observe([{ type: 'pay', n: payPerDrain, source: 'attacker' }], 0.016, { inFlight: 1 })
+      run.observe([{ type: 'drain' }], 0.016, { inFlight: 0 })
+    }
+    return run.ballsLeft
+  }
+  assert.equal(play(0), play(50),
+    'a lucky floor got a longer clock than an unlucky one — the refund is scaling with winning')
+  // 200 launches spent, 200 drains at 50% returned 100: net −100 from 100.
+  assert.equal(play(0), 0)
 })
 
 test('the floor does not end while a ball is still in the air', () => {

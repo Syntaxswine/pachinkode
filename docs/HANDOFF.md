@@ -1369,3 +1369,61 @@ refuses on a sandbox and on an already-finished run, and it is idempotent. Three
 **The test is the invariant, not the feature:** a run cashed out on floor 9 and a run that died on
 floor 9 with the same score must produce a `deepEqual` meta. If those ever diverge, cashing out has
 quietly become a penalty and the bug is back in a new shape.
+
+## 2026-08-12 — BALL RETURN moves from payouts to drains, and the wall becomes a lever again
+
+**Operator's ruling:** *"the ball return should just return 1/4 of balls that go through the
+bottom, rather than 1/4 of the balls shot."* One `case` moved in `Run#observe` — and it is the fix
+CLOSING TIME went looking for and could not find.
+
+**Why it matters more than it reads.** Tied to `pay`, the refund scaled with **winning**: a
+jackpot pays up to 1,500 balls, so a good deep floor refilled its own clock faster than it could
+possibly spend it. That is why fourteen times the wall bought nothing — a wall cannot catch a
+budget that grows with success. Tied to `drain` it is bounded by construction: a drain is a ball
+that entered play and lost, so the return rate is capped by how many balls the player launches,
+and the tray is worth a fixed multiple no matter how the floor is going.
+
+Measured, 500 launches at a jam-free dial:
+
+```
+                drains per launched ball   1 stack (25%)   4 stacks (100%)
+  stock                   0.88                 1.28×            8.20×
+  with GOLD BALL          1.78                 1.79×          UNBOUNDED
+```
+
+So one stack turns a 160-ball tray into about 205 launches, which is very close to what the part
+now says on the tin. **GOLD BALL doubles it** — a gold launch becomes two balls and both can
+drain — and at four stacks with gold fitted every launch returns at least one launch, so the floor
+never ends. That is not a softlock (the quota can still be met and the door taken, and CASH OUT
+exists now), but it is worth knowing before someone stacks it. The old four-stack case was
+"dangerous by design" too; this one is dangerous *structurally* rather than dangerous *because RTP
+happens to be near 100%*.
+
+**Nothing else moved.** RTP is machine-side and refunds are Run-side clock, so calibration is
+untouched — amadeji 83.1%, standard 105.6%, loose 85.9%, hane 89.5%, all four OK. The curve at
+n=24 comes back **crossover 6, floor-1 100%, 23/24 won**: exactly the tuned shape.
+(At n=10 the crossover metric reads 2–3; that is small-sample noise in the tool, not a change.
+Trust the n=24 number.)
+
+### AND THIS RETRACTS A CONCLUSION FROM THE SECTION ABOVE
+
+CLOSING TIME concluded "the wall is the wrong lever, go after the clock". That sweep was measured
+against the **old regenerating clock**, and it does not survive the new one:
+
+```
+                    cost to clear floor 24
+  OVERTIME_REACH   old (payout) clock   new (drain) clock
+        35                 3%                 13%
+        45                11%                 11%
+        55                 —                 105%   (floor 23: 193%)
+```
+
+On a bounded clock the wall responds sharply — floor 24 goes from a 13% formality to costing more
+than its whole tray between REACH 35 and 55. **The wall is a working lever again; the operator's
+"proportional to 35" is simply far too small a number for the clock the game now has.** Reaching
+CLOSING TIME is still 9/10 even at 105% cost, because banked carry and the refund together stretch
+a floor past its face-value tray — so if the cap is to be the place you FAIL, the next measurement
+to run is REACH 60–70 on this clock, not another clock change.
+
+The general lesson, and it is the second time this session: **a sweep is only valid for the system
+it was run against.** Re-run it after anything that changes the thing it was measuring through.

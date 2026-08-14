@@ -395,12 +395,13 @@ export const PARTS = [
     kind: 'economy',
     weight: 18,
     max: 4,
-    blurb: 'A quarter of every ball paid out comes back as another launch.',
-    detail: 'The floor\'s clock is LAUNCHES, and payouts do not normally touch it — a real ' +
-      'tray refilling is not a real extension of your afternoon. This part connects the two. ' +
-      'Stack all four and the machine returns every ball it pays: past that line a good floor ' +
-      'stops having a limit, which is the single most dangerous part in the catalogue and ' +
-      'deliberately so.',
+    blurb: 'A quarter of the balls that go through the bottom come back as another launch.',
+    detail: 'The floor\'s clock is LAUNCHES, and a ball that drains is simply gone — it entered, ' +
+      'it lost. This part catches a quarter of them on the way out and sends them round again, ' +
+      'so a tray of 160 is really worth about 213. It pays for LOSING, not for winning, which ' +
+      'is what keeps it honest: stack it and the tray stretches by a fixed amount no matter how ' +
+      'the floor is going. Stack all four and every ball that reaches the bottom comes back, ' +
+      'and the floor stops having a limit at all.',
     apply (L) { L.ballRefund = Math.min(1, L.ballRefund + 0.25) },
     available: (L) => L.ballRefund < 1 - 1e-9
   },
